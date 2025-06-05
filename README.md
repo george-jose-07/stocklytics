@@ -102,5 +102,5 @@ An interactive **Streamlit** application for analyzing and forecasting stock pri
 ### 1️⃣ Clone the Repository
 
 ```bash
-git clone https://github.com/george-jose-07/stock-analysis-and-predictions.git
-cd stock-analysis-and-predictions
+git clone https://github.com/george-jose-07/stock-analysis-and-predictions-.git
+cd stock-analysis-and-predictions-
