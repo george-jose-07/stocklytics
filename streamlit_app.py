@@ -24,4 +24,4 @@ prophet_page = st.Page("lib/prophet_model.py", title="Prophet Forecasting", icon
 pg = st.navigation([main_page, arima_page, sarima_page, lstm_page, prophet_page])
 
 # Run the selected page
-pg.run()
+pg.run() 

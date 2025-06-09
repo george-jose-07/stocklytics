@@ -1,16 +1,17 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
-from datetime import datetime, timedelta
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from datetime import timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
-st.title("📊 LSTM Stock Price Forecasting with Next Week Prediction")
+st.title("📊 LSTM Stock Price Forecasting and Prediction")
 st.write("Long Short-Term Memory (LSTM) neural network for time series prediction")
 
 # Check if data is available
@@ -20,26 +21,99 @@ if st.session_state.df is None:
 
 df = st.session_state.df.copy()
 stock_name = st.session_state.stock_name
+  
 
-# Sidebar for parameters
-st.sidebar.header("LSTM Parameters")
-train_ratio = st.sidebar.slider("Training Data Ratio", 0.6, 0.9, 0.8, 0.05)
-lookback = st.sidebar.slider("Lookback Window", 10, 60, 30, 5)
-lstm_units = st.sidebar.slider("LSTM Units", 25, 100, 50, 25)
-epochs = st.sidebar.slider("Training Epochs", 1, 50, 5, 1)
-batch_size = st.sidebar.selectbox("Batch Size", [1, 2, 4, 8, 16, 32])
+# Check if we have datetime index
+has_datetime_index = isinstance(df.index, pd.DatetimeIndex)
+if has_datetime_index:
+    date_range_str = f"{df.index.min().strftime('%Y-%m-%d')} to {df.index.max().strftime('%Y-%m-%d')}"
+else:
+    date_range_str = "No date information available"
 
-# Add option for future prediction days
-future_days = st.sidebar.slider("Days to Predict into Future", 1, 14, 7, 1)
+# Display data info
+col1, col2 = st.columns(2)
+with col1:
+    st.metric("Total Data Points", len(df))
+with col2:
+    st.metric("Stock Name", stock_name)
+
+
+st.write("Date Range:", date_range_str)
+st.write("---")
+
+
+# for parameters
+st.subheader("Train-Test Split Configuration")
+train_ratio = st.slider("Training Data Ratio",60,90, 80, 1)
+train_ratio = train_ratio / 100.0  # Convert to decimal for calculations
+
+# Prepare data
+train_size = int(len(df) * train_ratio)
+train = df.iloc[:train_size]['Close']
+test = df.iloc[train_size:]['Close']
+
+# Get date indices for plotting
+if has_datetime_index:
+    train_dates = df.index[:train_size]
+    test_dates = df.index[train_size:]
+    full_dates = df.index
+else:
+    train_dates = list(range(len(train)))
+    test_dates = list(range(len(test), len(df)))
+    full_dates = list(range(len(df)))
+
+col1, col2 = st.columns(2)
+with col1:
+    st.metric("Training Data Size", len(train))
+with col2:
+    st.metric("Testing Data Size", len(test))
+
+# Visualize train-test split
+fig_split = go.Figure()
+fig_split.add_trace(go.Scatter(
+    x=train_dates, 
+    y=train, 
+    mode='lines', 
+    name='Training Data',
+    line=dict(color='blue')
+))
+fig_split.add_trace(go.Scatter(
+    x=test_dates, 
+    y=test, 
+    mode='lines', 
+    name='Testing Data',
+    line=dict(color='red')
+))
+fig_split.update_layout(
+    title=f'{st.session_state.stock_name} - Train-Test Split Visualization',
+    xaxis_title='Date' if has_datetime_index else 'Time Period',
+    yaxis_title='Close Price',
+    height=400,
+    hovermode='x unified'
+)
+st.plotly_chart(fig_split, use_container_width=True)
+
+st.write("---")
+st.header("🤖 LSTM Model Training & Forecasting")
+st.subheader("LSTM Parameters")
+
+col1, col2 = st.columns(2)
+with col1:
+    lookback = st.slider("Lookback Window", 10, 60, 30, 5)
+with col2:
+    lstm_units = st.slider("LSTM Units", 25, 100, 50, 25)
+
+batch_size = st.selectbox("Batch Size", [1, 2, 4, 8, 16, 32])
+
+col1, col2 = st.columns(2)
+with col1:
+    epochs = st.slider("Training Epochs", 1, 50, 5, 1)
+with col2:
+    future_days = st.slider("Days to Predict into Future", 1, 14, 7, 1)  # Add option for future prediction days
 
 if st.button("🚀 Run LSTM Forecast", type="primary"):
     with st.spinner("Training LSTM model... This may take a while."):
         try:
-            # Prepare data
-            train_size = int(len(df) * train_ratio)
-            train = df.iloc[:train_size]['Close']
-            test = df.iloc[train_size:]['Close']
-            
             # Scale data
             scaler = MinMaxScaler(feature_range=(0,1))
             scaled_data = scaler.fit_transform(df[['Close']])
@@ -90,7 +164,8 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
             
             # Calculate RMSE
             lstm_rmse = np.sqrt(mean_squared_error(test.values, predictions))
-            
+            mae = mean_absolute_error(test, predictions)
+
             # === NEW: Predict future prices ===
             # Use the last 'lookback' days from the entire dataset for future prediction
             last_sequence = scaled_data[-lookback:]
@@ -126,9 +201,9 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("RMSE", f"{lstm_rmse:.2f}")
+                st.metric("RMSE", f"{lstm_rmse:.2f}", help="Root Mean Square Error")
             with col2:
-                st.metric("Training Data Points", len(train))
+                st.metric("MAE", f"{mae:.2f}", help="Mean Absolute Error")
             with col3:
                 current_price = df['Close'].iloc[-1]
                 future_price = future_predictions[-1, 0]
@@ -140,59 +215,101 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     f"{change_pct:+.2f}%"
                 )
             
-            # Plot results with future predictions
-            fig, ax = plt.subplots(figsize=(14, 8))
-            
-            # Historical data
-            ax.plot(train.index, train.values, label='Training Data', color='blue', alpha=0.7)
-            ax.plot(test.index, test.values, label='Actual Prices', color='red', linewidth=2)
-            ax.plot(test.index, predictions.flatten(), label='LSTM Forecast', color='green', linewidth=2, linestyle='--')
-            
-            # Future predictions
-            ax.plot(future_dates, future_predictions.flatten(), label=f'Future Forecast ({future_days} days)', 
-                   color='orange', linewidth=3, linestyle='-', marker='o', markersize=4)
-            
-            # Add vertical line to separate historical from future
-            ax.axvline(x=df.index[-1], color='gray', linestyle=':', alpha=0.7, label='Present')
-            
-            ax.set_title(f'{stock_name} - LSTM Forecasting with Future Predictions', fontsize=16, fontweight='bold')
-            ax.set_xlabel('Date', fontsize=12)
-            ax.set_ylabel('Price ($)', fontsize=12)
-            ax.legend(fontsize=10)
-            ax.grid(True, alpha=0.3)
-            
-            # Rotate x-axis labels for better readability
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            
-            st.pyplot(fig)
-            
-            # Separate future predictions graph
-            st.subheader("🔮 Next Week Prediction Focus")
-            fig2, ax2 = plt.subplots(figsize=(12, 6))
-            
-            # Show last 30 days + future predictions
-            recent_data = df.tail(30)
-            ax2.plot(recent_data.index, recent_data['Close'], label='Recent Actual Prices', 
-                    color='blue', linewidth=2, marker='o', markersize=3)
-            ax2.plot(future_dates, future_predictions.flatten(), label=f'Future Predictions', 
-                    color='red', linewidth=3, marker='o', markersize=5)
-            
-            # Connect last actual price to first prediction
-            ax2.plot([recent_data.index[-1], future_dates[0]], 
-                    [recent_data['Close'].iloc[-1], future_predictions[0, 0]], 
-                    color='gray', linestyle='--', alpha=0.7)
-            
-            ax2.axvline(x=df.index[-1], color='gray', linestyle=':', alpha=0.7, label='Present')
-            ax2.set_title(f'{stock_name} - Future Price Predictions', fontsize=16, fontweight='bold')
-            ax2.set_xlabel('Date', fontsize=12)
-            ax2.set_ylabel('Price ($)', fontsize=12)
-            ax2.legend(fontsize=10)
-            ax2.grid(True, alpha=0.3)
-            
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            st.pyplot(fig2)
+            st.subheader("📈 Forecast vs Actual")
+            fig = make_subplots(
+                    rows=2, cols=1,
+                    subplot_titles=('Full Time Series with Forecast', 'Forecast and Predictions (Zoomed)'),
+                    vertical_spacing=0.2,
+                    row_heights=[1, 0.5]
+            )
+            # Full time series plot
+            fig.add_trace(go.Scatter(
+                    x=train_dates, 
+                    y=train, 
+                    mode='lines', 
+                    name='Training Data',
+                    line=dict(color='blue', width=1.5),
+                    hovertemplate='Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+            ), row=1, col=1)
+                
+            fig.add_trace(go.Scatter(
+                    x=test_dates, 
+                    y=test, 
+                    mode='lines', 
+                    name='Actual (Test)',
+                    line=dict(color='red', width=2),
+                    hovertemplate='Date: %{x}<br>Actual: $%{y:.2f}<extra></extra>'
+            ), row=1, col=1)
+                
+            fig.add_trace(go.Scatter(
+                    x=test_dates, 
+                    y=predictions.flatten(), 
+                    mode='lines', 
+                    name='LSTM Forecast',
+                    line=dict(color='green', width=2),
+                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+            ), row=1, col=1)
+            fig.add_trace(go.Scatter(
+                    x=future_dates, 
+                    y=future_predictions.flatten(), 
+                    mode='lines+markers', 
+                    name='Future Predictions',
+                    line=dict(color='orange', width=2, dash='dash'),
+                    marker=dict(size=4),
+                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+            ), row=1, col=1)
+
+            # Zoomed forecast period
+            fig.add_trace(go.Scatter(
+                    x=test_dates, 
+                    y=test, 
+                    mode='lines+markers', 
+                    name='Actual (Test)',
+                    line=dict(color='red', width=2),
+                    marker=dict(size=4),
+                    showlegend=False,
+                    hovertemplate='Date: %{x}<br>Actual: $%{y:.2f}<extra></extra>'
+            ), row=2, col=1)
+
+            fig.add_trace(go.Scatter(
+                    x=test_dates, 
+                    y=predictions.flatten(), 
+                    mode='lines+markers', 
+                    name='LSTM Forecast',
+                    line=dict(color='green', width=2),
+                    marker=dict(size=4),
+                    showlegend=False,
+                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+            ), row=2, col=1)
+
+            fig.add_trace(go.Scatter(
+                    x=future_dates, 
+                    y=future_predictions.flatten(), 
+                    mode='lines+markers', 
+                    name='Future Predictions',
+                    line=dict(color='orange', width=2, dash='dash'),
+                    marker=dict(size=4),
+                    showlegend=False,
+                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+            ), row=2, col=1)
+
+            fig.update_layout(
+                    title=f'{st.session_state.stock_name} - LSTM Forecast Results',
+                    height=1000,
+                    hovermode='x unified',
+                    legend=dict(
+                        yanchor="top",
+                        y=0.99,
+                        xanchor="left",
+                        x=0.01
+                    )
+            )
+            fig.update_xaxes(title_text="Date" if has_datetime_index else "Time Period", row=1, col=1)
+            fig.update_xaxes(title_text="Date" if has_datetime_index else "Test Period", row=2, col=1)
+            fig.update_yaxes(title_text="Price ($)", row=1, col=1)
+            fig.update_yaxes(title_text="Price ($)", row=2, col=1)
+
+            st.plotly_chart(fig, use_container_width=True)
             
             # Future predictions table
             st.subheader("📅 Future Price Predictions")
@@ -210,41 +327,27 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
             
             st.dataframe(future_df, use_container_width=True)
             
-            # Training loss plot
-            st.subheader("📊 Training Loss")
-            fig3, ax3 = plt.subplots(figsize=(10, 4))
-            ax3.plot(history.history['loss'], color='blue', linewidth=2)
-            ax3.set_title('Model Training Loss', fontsize=14)
-            ax3.set_xlabel('Epoch')
-            ax3.set_ylabel('Loss')
-            ax3.grid(True, alpha=0.3)
-            st.pyplot(fig3)
-            
-            # Model summary
-            with st.expander("🔍 Model Architecture"):
-                model_summary = []
-                model.summary(print_fn=lambda x: model_summary.append(x))
-                st.text('\n'.join(model_summary))
-            
             # Prediction statistics
-            with st.expander("📈 Historical Prediction Statistics"):
-                pred_df = pd.DataFrame({
+            st.subheader("📈 Historical Prediction Statistics")
+            pred_df = pd.DataFrame({
                     'Date': test.index,
                     'Actual': test.values,
                     'Predicted': predictions.flatten(),
-                    'Error': test.values - predictions.flatten()
-                })
-                
-                st.dataframe(pred_df.tail(10))
-                
-                st.write("**Error Statistics:**")
-                st.write(f"- Mean Absolute Error: {np.mean(np.abs(pred_df['Error'])):.2f}")
-                st.write(f"- Mean Error: {np.mean(pred_df['Error']):.2f}")
-                st.write(f"- Max Error: {np.max(np.abs(pred_df['Error'])):.2f}")
-            
-            # Risk disclaimer
-            st.warning("⚠️ **Investment Disclaimer**: These predictions are based on historical data and machine learning models. Stock prices are influenced by many factors not captured in historical price data alone. Please do not use these predictions as the sole basis for investment decisions.")
-            
+                    'Residuals': test.values - predictions.flatten(),
+                    'Abs Error': np.abs(test.values - predictions.flatten()),
+                    'Percentage_Error': ((test.values - predictions.flatten()) / test.values) * 100
+            })
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Mean Residual", f"{np.mean(pred_df['Residuals']):.2f}")
+                st.metric("Std Residual", f"{np.std(pred_df['Residuals']):.2f}")
+            with col2:
+                st.metric("Min Error", f"{np.min(pred_df['Residuals']):.2f}")
+                st.metric("Max Error", f"{np.max(pred_df['Residuals']):.2f}")
+
+            st.dataframe(pred_df)
+
         except Exception as e:
             st.error(f"❌ Error during LSTM training: {str(e)}")
             st.write("Please check your data and parameters.")
