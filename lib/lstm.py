@@ -2,7 +2,8 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+import plotly.express as px
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 import plotly.graph_objects as go
@@ -105,11 +106,10 @@ with col2:
 
 batch_size = st.selectbox("Batch Size", [1, 2, 4, 8, 16, 32])
 
-col1, col2 = st.columns(2)
-with col1:
-    epochs = st.slider("Training Epochs", 1, 50, 5, 1)
-with col2:
-    future_days = st.slider("Days to Predict into Future", 1, 14, 7, 1)  # Add option for future prediction days
+
+epochs = st.slider("Training Epochs", 1, 50, 5, 1)
+
+# future_days = st.slider("Days to Predict into Future", 1, 14, 7, 1)  # Add option for future prediction days
 
 if st.button("🚀 Run LSTM Forecast", type="primary"):
     with st.spinner("Training LSTM model... This may take a while."):
@@ -163,58 +163,52 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
             predictions = scaler.inverse_transform(predictions)
             
             # Calculate RMSE
+            mse = mean_squared_error(test.values, predictions)
             lstm_rmse = np.sqrt(mean_squared_error(test.values, predictions))
             mae = mean_absolute_error(test, predictions)
+            r2 = r2_score(test, predictions)
+            accuracy = (1 - (mae / np.mean(test))) * 100
 
-            # === NEW: Predict future prices ===
             # Use the last 'lookback' days from the entire dataset for future prediction
-            last_sequence = scaled_data[-lookback:]
-            future_predictions = []
+            # last_sequence = scaled_data[-lookback:]
+            # future_predictions = []
             
-            for _ in range(future_days):
-                # Reshape for prediction
-                X_future = last_sequence.reshape((1, lookback, 1))
+            # for _ in range(future_days):
+            #     # Reshape for prediction
+            #     X_future = last_sequence.reshape((1, lookback, 1))
                 
-                # Predict next value
-                next_pred = model.predict(X_future, verbose=0)
-                future_predictions.append(next_pred[0, 0])
+            #     # Predict next value
+            #     next_pred = model.predict(X_future, verbose=0)
+            #     future_predictions.append(next_pred[0, 0])
                 
-                # Update sequence for next prediction (sliding window)
-                last_sequence = np.append(last_sequence[1:], next_pred[0, 0]).reshape(-1, 1)
+            #     # Update sequence for next prediction (sliding window)
+            #     last_sequence = np.append(last_sequence[1:], next_pred[0, 0]).reshape(-1, 1)
             
-            # Convert future predictions back to original scale
-            future_predictions = np.array(future_predictions).reshape(-1, 1)
-            future_predictions = scaler.inverse_transform(future_predictions)
+            # # Convert future predictions back to original scale
+            # future_predictions = np.array(future_predictions).reshape(-1, 1)
+            # future_predictions = scaler.inverse_transform(future_predictions)
             
-            # Create future dates
-            last_date = df.index[-1]
-            future_dates = []
-            for i in range(1, future_days + 1):
-                if hasattr(last_date, 'date'):
-                    future_date = last_date + timedelta(days=i)
-                else:
-                    future_date = pd.to_datetime(last_date) + timedelta(days=i)
-                future_dates.append(future_date)
+            # # Create future dates
+            # last_date = df.index[-1]
+            # future_dates = []
+            # for i in range(1, future_days + 1):
+            #     if hasattr(last_date, 'date'):
+            #         future_date = last_date + timedelta(days=i)
+            #     else:
+            #         future_date = pd.to_datetime(last_date) + timedelta(days=i)
+            #     future_dates.append(future_date)
             
             # Display results
             st.success(f"✅ LSTM model trained successfully!")
-            
-            col1, col2, col3 = st.columns(3)
+
+            col1, col2  = st.columns(2)
             with col1:
                 st.metric("RMSE", f"{lstm_rmse:.2f}", help="Root Mean Square Error")
+                st.metric("R²", f"{r2:.2f}", help="R-squared")
             with col2:
                 st.metric("MAE", f"{mae:.2f}", help="Mean Absolute Error")
-            with col3:
-                current_price = df['Close'].iloc[-1]
-                future_price = future_predictions[-1, 0]
-                price_change = future_price - current_price
-                change_pct = (price_change / current_price) * 100
-                st.metric(
-                    f"Predicted Price (Day {future_days})", 
-                    f"${future_price:.2f}",
-                    f"{change_pct:+.2f}%"
-                )
-            
+                st.metric("Accuracy", f"{accuracy:.2f}%", help="Prediction Accuracy")
+                
             st.subheader("📈 Forecast vs Actual")
             fig = make_subplots(
                     rows=2, cols=1,
@@ -249,15 +243,6 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     line=dict(color='green', width=2),
                     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
             ), row=1, col=1)
-            fig.add_trace(go.Scatter(
-                    x=future_dates, 
-                    y=future_predictions.flatten(), 
-                    mode='lines+markers', 
-                    name='Future Predictions',
-                    line=dict(color='orange', width=2, dash='dash'),
-                    marker=dict(size=4),
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
-            ), row=1, col=1)
 
             # Zoomed forecast period
             fig.add_trace(go.Scatter(
@@ -282,17 +267,6 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
             ), row=2, col=1)
 
-            fig.add_trace(go.Scatter(
-                    x=future_dates, 
-                    y=future_predictions.flatten(), 
-                    mode='lines+markers', 
-                    name='Future Predictions',
-                    line=dict(color='orange', width=2, dash='dash'),
-                    marker=dict(size=4),
-                    showlegend=False,
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
-            ), row=2, col=1)
-
             fig.update_layout(
                     title=f'{st.session_state.stock_name} - LSTM Forecast Results',
                     height=1000,
@@ -312,30 +286,41 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
             st.plotly_chart(fig, use_container_width=True)
             
             # Future predictions table
-            st.subheader("📅 Future Price Predictions")
-            future_df = pd.DataFrame({
-                'Date': future_dates,
-                'Predicted Price': future_predictions.flatten(),
-                'Price Change': future_predictions.flatten() - current_price,
-                'Change %': ((future_predictions.flatten() - current_price) / current_price) * 100
-            })
+            # st.subheader("📅 Future Price Predictions")
+            # future_df = pd.DataFrame({
+            #     'Date': future_dates,
+            #     'Predicted Price': future_predictions.flatten(),
+            #     'Price Change': future_predictions.flatten() - current_price,
+            #     'Change %': ((future_predictions.flatten() - current_price) / current_price) * 100
+            # })
             
-            # Format the dataframe for better display
-            future_df['Predicted Price'] = future_df['Predicted Price'].apply(lambda x: f"${x:.2f}")
-            future_df['Price Change'] = future_df['Price Change'].apply(lambda x: f"${x:+.2f}")
-            future_df['Change %'] = future_df['Change %'].apply(lambda x: f"{x:+.2f}%")
+            # # Format the dataframe for better display
+            # future_df['Predicted Price'] = future_df['Predicted Price'].apply(lambda x: f"${x:.2f}")
+            # future_df['Price Change'] = future_df['Price Change'].apply(lambda x: f"${x:+.2f}")
+            # future_df['Change %'] = future_df['Change %'].apply(lambda x: f"{x:+.2f}%")
             
-            st.dataframe(future_df, use_container_width=True)
-            
+            # st.dataframe(future_df, use_container_width=True)
+
+            residuals = test.values - predictions.flatten()
+            fg = px.bar(
+                df,
+                x=test_dates, 
+                y=residuals, 
+                title='Residuals of LSTM Forecast',
+                labels={'x': 'Date', 'y': 'Residuals'},
+                )
+            fg.update_layout(height=400)
+            st.plotly_chart(fg, use_container_width=True)
+
             # Prediction statistics
             st.subheader("📈 Historical Prediction Statistics")
             pred_df = pd.DataFrame({
                     'Date': test.index,
                     'Actual': test.values,
                     'Predicted': predictions.flatten(),
-                    'Residuals': test.values - predictions.flatten(),
-                    'Abs Error': np.abs(test.values - predictions.flatten()),
-                    'Percentage_Error': ((test.values - predictions.flatten()) / test.values) * 100
+                    'Residuals': residuals,
+                    'Abs Error': np.abs(residuals),
+                    'Percentage_Error': (residuals / test.values) * 100
             })
 
             col1, col2 = st.columns(2)
@@ -350,7 +335,6 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
 
         except Exception as e:
             st.error(f"❌ Error during LSTM training: {str(e)}")
-            st.write("Please check your data and parameters.")
 
 # Information about LSTM
 with st.expander("ℹ️ About LSTM Forecasting"):
@@ -367,33 +351,6 @@ with st.expander("ℹ️ About LSTM Forecasting"):
     - **LSTM Units**: Number of neurons in each LSTM layer
     - **Epochs**: Number of training iterations
     - **Batch Size**: Number of samples processed together
-    - **Future Days**: Number of days to predict into the future
-    
-    **Future Prediction Method:**
-    - Uses the last 'lookback' days to predict the next day
-    - Applies a sliding window approach for multi-day predictions
-    - Each prediction becomes part of the input for the next prediction
     
     **Note**: LSTM models may take longer to train compared to traditional methods like ARIMA. Future predictions become less reliable the further into the future they extend.
-    """)
-
-with st.expander("🎯 How Future Predictions Work"):
-    st.write("""
-    **Multi-Step Ahead Forecasting:**
-    
-    1. **Initial Input**: Use the last N days (lookback window) from your dataset
-    2. **First Prediction**: Model predicts the next day's price
-    3. **Sliding Window**: Remove the oldest day, add the predicted day
-    4. **Repeat**: Use this new sequence to predict the day after
-    5. **Continue**: Repeat this process for the desired number of future days
-    
-    **Important Considerations:**
-    - Prediction accuracy typically decreases with longer forecast horizons
-    - The model only uses price history, not external factors (news, earnings, etc.)
-    - Results should be combined with fundamental analysis for investment decisions
-    
-    **Interpreting Results:**
-    - Green line: Historical model performance on test data
-    - Orange/Red line: Future predictions beyond available data
-    - The further the prediction, the higher the uncertainty
     """)

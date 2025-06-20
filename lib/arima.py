@@ -2,20 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 import warnings
 warnings.filterwarnings('ignore')
-
-# Try importing statsmodels for ARIMA
-try:
-    from statsmodels.tsa.arima.model import ARIMA
-    from statsmodels.tsa.stattools import adfuller
-    from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-    STATSMODELS_AVAILABLE = True
-except ImportError:
-    STATSMODELS_AVAILABLE = False
-    
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from statsmodels.tsa.arima.model import ARIMA  
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 st.title("📈 ARIMA Model Forecasting")
 st.write("ARIMA (AutoRegressive Integrated Moving Average) model for time series forecasting.")
@@ -113,10 +105,6 @@ st.write("---")
 # ARIMA Model Section
 st.header("🤖 ARIMA Model Training & Forecasting")
 
-if not STATSMODELS_AVAILABLE:
-    st.error("❌ statsmodels library is not installed. Please install it using: pip install statsmodels")
-    st.stop()
-
 # ARIMA Parameters
 st.subheader("🔧 ARIMA Parameters")
 auto_search = st.radio(
@@ -140,7 +128,7 @@ if auto_search == "Manual Selection":
 if st.button("🚀 Train ARIMA Model", type="primary"):
     with st.spinner("🔄 Training ARIMA Model... This may take a moment."):
         try:
-            best_aic = float('inf')
+            best_rmse = float('inf')
             best_model = None
             best_order = None
             results_log = []
@@ -164,14 +152,19 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                         model = ARIMA(train_data, order=(p_val, d_val, q_val))
                         fitted_model = model.fit()
                         
+                        # Make prediction on test data for RMSE calculation
+                        forecast_result = fitted_model.forecast(steps=len(test_data))
+                        rmse = np.sqrt(mean_squared_error(test_data, forecast_result))
+                        
                         results_log.append({
                             'Order': f"({p_val},{d_val},{q_val})",
+                            'RMSE': rmse,
                             'AIC': fitted_model.aic,
                             'BIC': fitted_model.bic
                         })
                         
-                        if fitted_model.aic < best_aic:
-                            best_aic = fitted_model.aic
+                        if rmse < best_rmse:
+                            best_rmse = rmse
                             best_model = fitted_model
                             best_order = (p_val, d_val, q_val)
                         
@@ -181,6 +174,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     except Exception as e:
                         results_log.append({
                             'Order': f"({p_val},{d_val},{q_val})",
+                            'RMSE': 'Failed',
                             'AIC': 'Failed',
                             'BIC': 'Failed'
                         })
@@ -191,17 +185,16 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 if best_model is None:
                     raise Exception("No suitable ARIMA model found. Try adjusting the parameter ranges.")
                     
-                st.subheader(f"🎯 Best ARIMA parameters found: ARIMA{best_order}")                
+                st.subheader(f"🎯 Best ARIMA parameters found: ARIMA{best_order} (RMSE: {best_rmse:.4f})")                
                 
             else:
                 # Use user-specified parameters
                 model = ARIMA(train_data, order=(p, d, q))
                 best_model = model.fit()
                 best_order = (p, d, q)
-                best_aic = best_model.aic
-            
-
-            
+                # Calculate RMSE for the user-specified model
+                forecast_result = best_model.forecast(steps=len(test_data))
+                best_rmse = np.sqrt(mean_squared_error(test_data, forecast_result))
             
             # Immediately proceed with forecasting after successful model training
             st.write("---")
@@ -212,25 +205,21 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 forecast_result = best_model.forecast(steps=len(test_data))
                 arima_forecast = forecast_result
                 
-                # Get confidence intervals if available
-                forecast_ci = None
-                try:
-                    forecast_ci = best_model.get_forecast(steps=len(test_data)).conf_int()
-                except:
-                    pass
-                
                 # Calculate metrics
                 rmse = np.sqrt(mean_squared_error(test_data, arima_forecast))
                 mae = mean_absolute_error(test_data, arima_forecast)
-                
+                r2 = r2_score(test_data, arima_forecast)
+                accuracy = 100 * (1 - (rmse / np.mean(test_data)))
                 
                 # Display metrics
                 st.subheader("📊 Forecast Accuracy Metrics")
                 col1, col2 = st.columns(2)
                 with col1:
                     st.metric("RMSE", f"{rmse:.2f}", help="Root Mean Square Error")
+                    st.metric("R² Score", f"{r2:.2f}", help="Coefficient of Determination")
                 with col2:
                     st.metric("MAE", f"{mae:.2f}", help="Mean Absolute Error")
+                    st.metric("Forecast Accuracy", f"{accuracy:.2f}%", help="Percentage of accuracy in forecast")
                 
                 # Forecast visualization
                 st.subheader("📈 Forecast vs Actual")
@@ -314,10 +303,20 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 st.plotly_chart(fig, use_container_width=True)
                 
                 residuals = test_data.values - arima_forecast
+                fg = px.bar(
+                df,
+                x=test_dates, 
+                y=residuals, 
+                title='Residuals of ARIMA Forecast',
+                labels={'x': 'Date', 'y': 'Residuals'},
+                )
+                fg.update_layout(height=400)
+                st.plotly_chart(fg, use_container_width=True)
+                
                 # Additional metrics
                 st.subheader("📊 Additional Analysis")
+
                 col1, col2 = st.columns(2)
-                
                 with col1:
                     st.metric("Mean Residual", f"{np.mean(residuals):.4f}")
                     st.metric("Std Residual", f"{np.std(residuals):.4f}")
@@ -329,25 +328,15 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 # Forecast table
                 st.subheader("📋 Detailed Forecast Results")
                 
-                # Create detailed results dataframe
-                if has_datetime_index:
-                    forecast_df = pd.DataFrame({
+                
+                forecast_df = pd.DataFrame({
                         'Date': test_dates,
                         'Actual': test_data.values,
                         'Forecast': arima_forecast,
                         'Residual': residuals,
                         'Absolute_Error': np.abs(residuals),
                         'Percentage_Error': (residuals / test_data.values) * 100
-                    })
-                else:
-                    forecast_df = pd.DataFrame({
-                        'Period': test_dates,
-                        'Actual': test_data.values,
-                        'Forecast': arima_forecast,
-                        'Residual': residuals,
-                        'Absolute_Error': np.abs(residuals),
-                        'Percentage_Error': (residuals / test_data.values) * 100
-                    })
+                })
                 
                 # Format the dataframe for better display
                 forecast_df['Actual'] = forecast_df['Actual'].round(2)
@@ -378,8 +367,8 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
 
         except Exception as e:
             st.error(f"❌ Error during ARIMA model training: {str(e)}")
-            st.info("💡 Try adjusting the parameters or check your data for any issues.")
-            st.info("Common issues: insufficient data, too many parameters, or non-numeric data.")
+            st.write("💡 Try adjusting the parameters or check your data for any issues.")
+            st.write("Common issues: insufficient data, too many parameters, or non-numeric data.")
 
 
 with st.expander("ℹ️ About ARIMA Models"):

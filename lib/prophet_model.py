@@ -1,10 +1,11 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from prophet import Prophet
 from itertools import product
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 import logging
 import warnings
@@ -39,40 +40,56 @@ with col1:
 with col2:
     st.metric("Stock Name", stock_name)
 
-
 st.write("Date Range:", date_range_str)
 st.write("---")
 
-df = df.reset_index()[['Date', 'Close']].rename(columns={'Date': 'ds', 'Close': 'y'})
+# Prepare data
+train_ratio = st.slider("Training Data Ratio (for validation)", 60, 90, 80, 1)
+train_ratio = train_ratio / 100.0  # Convert to fraction
+train_size = int(len(df) * train_ratio)
+train_data = df.iloc[:train_size]['Close']
+test_data = df.iloc[train_size:]['Close']
+
+# Get date indices for plotting
+if has_datetime_index:
+    train_dates = df.index[:train_size]
+    test_dates = df.index[train_size:]
+    full_dates = df.index
+else:
+    train_dates = list(range(len(train_data)))
+    test_dates = list(range(len(train_data), len(df)))
+    full_dates = list(range(len(df)))
+
+# Prepare data for Prophet format (Prophet requires 'ds' and 'y' columns)
+prophet_df = pd.DataFrame()
+prophet_df['ds'] = df.index
+prophet_df['y'] = df['Close'].values
+
+train = prophet_df.iloc[:train_size]
+test = prophet_df.iloc[train_size:]
+test_actual = test_data.values if len(test_data) > 0 else None
 
 # Model validation settings
 st.subheader("Train-Test Split Configuration")
-train_ratio = st.slider("Training Data Ratio (for validation)", 60, 90, 80, 1,
-                                help="Used for model validation before making future predictions")
-train_ratio = train_ratio / 100.0  # Convert to fraction
-train_size = int(len(df) * train_ratio)
-train = df.iloc[:train_size]
-test = df.iloc[train_size:]
-test_actual = test['y'].values if len(test) > 0 else None
 
 col1, col2 = st.columns(2)
 with col1:
-    st.metric("Training Data Size", len(train))
+    st.metric("Training Data Size", len(train_data))
 with col2:
-    st.metric("Testing Data Size", len(test))
+    st.metric("Testing Data Size", len(test_data))
 
-# Visualize train-test split
+# Visualize train-test split using train_dates, test_dates
 fig_split = go.Figure()
 fig_split.add_trace(go.Scatter(
-    x=train['ds'], 
-    y=train['y'], 
+    x=train_dates, 
+    y=train_data, 
     mode='lines', 
     name='Training Data',
     line=dict(color='blue')
 ))
 fig_split.add_trace(go.Scatter(
-    x=test['ds'], 
-    y=test['y'], 
+    x=test_dates, 
+    y=test_data, 
     mode='lines', 
     name='Testing Data',
     line=dict(color='red')
@@ -88,13 +105,9 @@ st.plotly_chart(fig_split, use_container_width=True)
 
 st.write("---")
 
-st.header("🤖 LSTM Model Training & Forecasting")
+st.header("🔮 Prophet Model Training & Forecasting")
 st.header("Prophet Parameters")
 
-# Prediction settings
-st.subheader("Prediction Settings")
-prediction_days = st.slider("Days to Predict", 1, 30, 7, 1, 
-                                   help="Number of days into the future to predict")
 
 # Hyperparameter tuning options
 st.subheader("Hyperparameter Tuning")
@@ -224,29 +237,27 @@ if st.button("🚀 Run Prophet Forecast & Predict Next Week", type="primary"):
             
             # Train final model on ALL available data for future predictions
             if best_params:
-                final_prophet_model = Prophet(**best_params, uncertainty_samples=uncertainty_samples)
-                final_prophet_model.fit(df)  # Use all data for final model
-                
+                model = Prophet(**best_params, uncertainty_samples=uncertainty_samples)
+                model.fit(train)
+
                 # Create future dataframe for predictions
-                future_df = final_prophet_model.make_future_dataframe(periods=prediction_days, freq=freq)
-                final_forecast_df = final_prophet_model.predict(future_df)
+                future_df = model.make_future_dataframe(periods=len(test), freq=freq)
+                forecast = model.predict(future_df)
                 
-                # Extract historical and future predictions
-                historical_forecast = final_forecast_df.iloc[:-prediction_days]['yhat'].values
-                future_predictions = final_forecast_df.iloc[-prediction_days:]['yhat'].values
-                future_lower = final_forecast_df.iloc[-prediction_days:]['yhat_lower'].values
-                future_upper = final_forecast_df.iloc[-prediction_days:]['yhat_upper'].values
-                future_dates = final_forecast_df.iloc[-prediction_days:]['ds'].values
+                # # Extract historical and future predictions
+                # historical_forecast = final_forecast_df.iloc[:-prediction_days]['yhat'].values
+                # future_predictions = final_forecast_df.iloc[-prediction_days:]['yhat'].values
+                # future_dates = final_forecast_df.iloc[-prediction_days:]['ds'].values
                 
                 # Validation metrics (if validation data exists)
-                rmse = None
-                if test_actual is not None and len(test_actual) > 0:
-                    validation_forecast = final_forecast_df.iloc[train_size:len(df)]['yhat'].values
-                    if len(validation_forecast) == len(test_actual):
-                        rmse = np.sqrt(mean_squared_error(test_actual, validation_forecast))
-                        mae = mean_absolute_error(test_actual, validation_forecast)
 
-
+                validation_forecast = forecast.iloc[-len(test):]['yhat'].values
+                rmse = np.sqrt(mean_squared_error(test_actual, validation_forecast))
+                mae = mean_absolute_error(test_actual, validation_forecast)
+                r2 = r2_score(test_actual, validation_forecast)
+                accuracy = (1-(mae/ np.mean(test_actual))) * 100
+                #accuracy = accuracy_score(np.round(test_actual), np.round(validation_forecast))
+                
                 # Show best parameters if tuning was enabled
                 if enable_tuning and best_params:
                     st.subheader("🎯 Best Parameters Found" if rmse else "🎯 Parameters Used")
@@ -255,24 +266,21 @@ if st.button("🚀 Run Prophet Forecast & Predict Next Week", type="primary"):
                     with st.expander("📊 Best Parameters"):
                         st.dataframe(params_df, use_container_width=True)
 
-                # Metrics
-                # Key prediction insights
-                last_price = df['y'].iloc[-1]
-                last_prediction = future_predictions[-1]
-                total_change = last_prediction - last_price
-                total_change_pct = (total_change / last_price) * 100
-                col1, col2, col3 = st.columns(3)
+                # # Key prediction insights using Close prices
+                # last_price = df['Close'].iloc[-1]
+                # last_prediction = future_predictions[-1]
+                # total_change = last_prediction - last_price
+                # total_change_pct = (total_change / last_price) * 100
+
+                col1, col2 = st.columns(2)
                 with col1:
-                    if rmse:
-                        st.metric("RMSE", f"{rmse:.2f}")
-                    else:
-                        st.metric("Model Status", "Trained")
+                    st.metric("RMSE", f"{rmse:.2f}")
+                    st.metric("R²", f"{r2:.2f}")
+
                 with col2:
                     st.metric("MAE", f"{mae:.2f}", help="Mean Absolute Error")
-                with col3:
-                    st.metric(f"Predicted Price (Day {prediction_days})", f"${last_prediction:.2f}", 
-                             f"${total_change_pct:+.2f}%")
-                
+                    st.metric("Accuracy", f"{accuracy:.2f}%", help="Prediction Accuracy")
+
                 st.subheader("📈 Forecast vs Actual")
                 fig = make_subplots(
                     rows=2, cols=1,
@@ -280,47 +288,51 @@ if st.button("🚀 Run Prophet Forecast & Predict Next Week", type="primary"):
                     vertical_spacing=0.2,
                     row_heights=[1, 0.5]
                 )
-                # Full time series plot
+                
+                # Full time series plot using train_dates, test_dates
                 fig.add_trace(go.Scatter(
-                    x=train['ds'], 
-                    y=train['y'], 
+                    x=train_dates, 
+                    y=train_data, 
                     mode='lines', 
                     name='Training Data',
                     line=dict(color='blue', width=1.5),
                     hovertemplate='Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
                 ), row=1, col=1)
-                
+
                 fig.add_trace(go.Scatter(
-                    x=test['ds'], 
-                    y=test['y'], 
+                    x=test_dates, 
+                    y=test_data, 
                     mode='lines', 
                     name='Actual (Test)',
                     line=dict(color='red', width=2),
                     hovertemplate='Date: %{x}<br>Actual: $%{y:.2f}<extra></extra>'
                 ), row=1, col=1)
-                
+                    
+                    # Add validation forecast if available
                 fig.add_trace(go.Scatter(
-                    x=test['ds'], 
+                    x=test_dates, 
                     y=validation_forecast, 
                     mode='lines', 
                     name='Prophet Forecast',
                     line=dict(color='green', width=2),
                     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
                 ), row=1, col=1)
-                fig.add_trace(go.Scatter(
-                    x=future_dates, 
-                    y=future_predictions.flatten(), 
-                    mode='lines+markers', 
-                    name='Future Predictions',
-                    line=dict(color='orange', width=2, dash='dash'),
-                    marker=dict(size=4),
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
-                ), row=1, col=1)
+                
+                # Future predictions
+                # fig.add_trace(go.Scatter(
+                #     x=future_dates, 
+                #     y=future_predictions.flatten(), 
+                #     mode='lines+markers', 
+                #     name='Future Predictions',
+                #     line=dict(color='orange', width=2, dash='dash'),
+                #     marker=dict(size=4),
+                #     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                # ), row=1, col=1)
 
-            # Zoomed forecast period
+                # Zoomed forecast period (only if test data exists)
                 fig.add_trace(go.Scatter(
-                    x=test['ds'], 
-                    y=test['y'], 
+                    x=test_dates, 
+                    y=test_data, 
                     mode='lines+markers', 
                     name='Actual (Test)',
                     line=dict(color='red', width=2),
@@ -330,29 +342,29 @@ if st.button("🚀 Run Prophet Forecast & Predict Next Week", type="primary"):
                 ), row=2, col=1)
 
                 fig.add_trace(go.Scatter(
-                    x=test['ds'], 
+                    x=test_dates, 
                     y=validation_forecast, 
                     mode='lines+markers', 
-                    name='LSTM Forecast',
+                    name='Prophet Forecast',
                     line=dict(color='green', width=2),
                     marker=dict(size=4),
                     showlegend=False,
                     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
                 ), row=2, col=1)
 
-                fig.add_trace(go.Scatter(
-                    x=future_dates, 
-                    y=future_predictions.flatten(), 
-                    mode='lines+markers', 
-                    name='Future Predictions',
-                    line=dict(color='orange', width=2, dash='dash'),
-                    marker=dict(size=4),
-                    showlegend=False,
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
-                ), row=2, col=1)
+                    # fig.add_trace(go.Scatter(
+                    #     x=future_dates, 
+                    #     y=future_predictions.flatten(), 
+                    #     mode='lines+markers', 
+                    #     name='Future Predictions',
+                    #     line=dict(color='orange', width=2, dash='dash'),
+                    #     marker=dict(size=4),
+                    #     showlegend=False,
+                    #     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                    # ), row=2, col=1)
 
                 fig.update_layout(
-                    title=f'{st.session_state.stock_name} - LSTM Forecast Results',
+                    title=f'{st.session_state.stock_name} - Prophet Forecast Results',
                     height=1000,
                     hovermode='x unified',
                     legend=dict(
@@ -369,67 +381,69 @@ if st.button("🚀 Run Prophet Forecast & Predict Next Week", type="primary"):
 
                 st.plotly_chart(fig, use_container_width=True)
             
-                # Future Predictions Table
-                current_price = df['y'].iloc[-1]
-                st.subheader("📅 Future Price Predictions")
-                future_df_display = pd.DataFrame({
-                    'Date': pd.to_datetime(future_dates),
-                    'Predicted Price': future_predictions,
-                    'Price Change': future_predictions - current_price,
-                    'Change %': ((future_predictions - current_price) / current_price) * 100,
-                })
+                # Future Predictions Table using Close prices
+                # current_price = df['Close'].iloc[-1]
+                # st.subheader("📅 Future Price Predictions")
+                # future_df_display = pd.DataFrame({
+                #     'Date': pd.to_datetime(future_dates),
+                #     'Predicted Price': future_predictions,
+                #     'Price Change': future_predictions - current_price,
+                #     'Change %': ((future_predictions - current_price) / current_price) * 100,
+                # })
                 
-                # Format the dataframe for better display
-                future_df_display['Predicted Price'] = future_df_display['Predicted Price'].round(2)
-                future_df_display['Date'] = future_df_display['Date'].dt.strftime('%Y-%m-%d')
-                st.dataframe(future_df_display, use_container_width=True)
+                # # Format the dataframe for better display
+                # future_df_display['Predicted Price'] = future_df_display['Predicted Price'].round(2)
+                # future_df_display['Price Change'] = future_df_display['Price Change'].round(2)
+                # future_df_display['Change %'] = future_df_display['Change %'].round(2)
+                # future_df_display['Date'] = future_df_display['Date'].dt.strftime('%Y-%m-%d')
+                # st.dataframe(future_df_display, use_container_width=True)
 
                 # Model validation details (if available)
-                if rmse and test_actual is not None:
-                        validation_forecast_full = final_forecast_df.iloc[train_size:len(df)]['yhat'].values
-                        
-                        validation_details_df = pd.DataFrame({
-                            'Date': test['ds'],
-                            'Actual': test_actual,
-                            'Predicted': validation_forecast_full,
-                            'Residuals': test_actual - validation_forecast_full,
-                            'Residuals': test_actual - validation_forecast_full,
-                            'Abs Residuals': np.abs(test_actual - validation_forecast_full),
-                            'Percentage_Error': ((test_actual - validation_forecast_full) / test_actual) * 100,
-                        })
-                          # Validation statistics
-                        st.subheader("📈 Historical Prediction Statistics")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("Mean Residual", f"{np.mean(validation_details_df['Residuals']):.2f}")
-                            st.metric("Std Residual", f"{np.std(validation_details_df['Residuals']):.2f}")
-                        with col2:
-                            st.metric("Min Error", f"{np.min(validation_details_df['Residuals']):.2f}")
-                            st.metric("Max Error", f"{np.max(validation_details_df['Residuals']):.2f}")
+                residuals = test_actual - validation_forecast
+                fg = px.bar(
+                df,
+                x=test_dates, 
+                y=residuals, 
+                title='Residuals of Prophet Forecast',
+                labels={'x': 'Date', 'y': 'Residuals'},
+                )
+                fg.update_layout(height=400)
+                st.plotly_chart(fg, use_container_width=True)
 
-                        st.dataframe(validation_details_df, use_container_width=True)
+                validation_details_df = pd.DataFrame({
+                        'Date': test_dates,
+                        'Actual': test_actual,
+                        'Predicted': validation_forecast,
+                        'Residuals': residuals,
+                        'Abs Residuals': np.abs(residuals),
+                        'Percentage_Error': (residuals / test_actual) * 100,
+                })
+                    
+                    # Validation statistics
+                st.subheader("📈 Historical Prediction Statistics")
+                col1, col2 = st.columns(2)
+                with col1:
+                        st.metric("Mean Residual", f"{np.mean(validation_details_df['Residuals']):.2f}")
+                        st.metric("Std Residual", f"{np.std(validation_details_df['Residuals']):.2f}")
+                with col2:
+                        st.metric("Min Error", f"{np.min(validation_details_df['Residuals']):.2f}")
+                        st.metric("Max Error", f"{np.max(validation_details_df['Residuals']):.2f}")
+
+                st.subheader("📋 Detailed Forecast Results")
+                st.dataframe(validation_details_df, use_container_width=True)
                 
-            else:
-                st.error("❌ No valid parameters found. Please try different parameter ranges.")
                 
         except Exception as e:
             st.error(f"❌ Error during Prophet forecasting: {str(e)}")
-            st.write("**Possible solutions:**")
-            st.write("- Check if your data has a proper date column")
-            st.write("- Ensure you have enough data points (at least 30 days recommended)")
-            st.write("- Try reducing the parameter search space")
-            st.write("- Disable hyperparameter tuning and use manual parameters")
-            st.write("- Check if your date column is properly formatted")
 
 # Information about Prophet
-with st.expander("ℹ️ About Prophet Forecasting & Future Predictions"):
+with st.expander("ℹ️ About Prophet Forecasting"):
     st.write("""
     **Facebook Prophet for Future Price Prediction**
     
     This enhanced version of Prophet focuses on predicting future stock prices rather than just evaluating historical performance.
     
     **Key Features:**
-    - **Future Predictions**: Predicts actual future prices (next 1-30 days)
     - **Uncertainty Quantification**: Provides confidence intervals for predictions
     - **Automatic Hyperparameter Tuning**: Finds optimal parameters using historical validation
     - **Component Analysis**: Shows trend, seasonality, and other factors
@@ -439,27 +453,4 @@ with st.expander("ℹ️ About Prophet Forecasting & Future Predictions"):
     1. **Validation Phase**: Uses historical data to find best parameters (if tuning enabled)
     2. **Training Phase**: Trains final model on ALL available data
     3. **Prediction Phase**: Generates future predictions with confidence intervals
-    
-    **Prediction Reliability:**
-    - **1-7 days**: Generally most reliable
-    - **1-2 weeks**: Good reliability for trending stocks
-    - **2-4 weeks**: Moderate reliability, higher uncertainty
-    - **Beyond 1 month**: Lower reliability, use with caution
-    
-    **Key Metrics:**
-    - **Predicted Price**: Most likely future price
-    - **Confidence Interval**: Range of possible prices (typically 80% confidence)
-    - **Relative Uncertainty**: Confidence range as % of predicted price
-    - **Coverage %**: How often actual prices fall within predicted ranges (from validation)
-    
-    **Best Practices:**
-    - Use at least 3-6 months of historical data
-    - Enable hyperparameter tuning for better accuracy
-    - Consider external factors not captured by the model
-    - Use predictions as guidance, not absolute truth
-    - Monitor prediction accuracy over time
-    
-    **Risk Disclaimer:** These predictions are statistical estimates based on historical patterns. 
-    Actual stock prices are influenced by many factors not captured in historical price data alone. 
-    Always consider multiple sources and risk factors when making investment decisions.
     """)

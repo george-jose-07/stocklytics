@@ -1,9 +1,10 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from scipy import stats
+import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import itertools
@@ -192,7 +193,8 @@ def grid_search_sarima(train_data, p_range, d_range, q_range, P_range, D_range, 
                 
                 fitted_model = model.fit(disp=False)
                 
-                score = getattr(fitted_model, criterion)
+                forecast = fitted_model.forecast(steps=len(test))
+                score = np.sqrt(mean_squared_error(test, forecast))
                 results.append({
                     'params': (p, d, q),
                     'seasonal_params': (P, D, Q, s),
@@ -254,21 +256,21 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
             st.header("📈 Forecast Results")
             # Generate forecasts
             forecast = fitted_model.forecast(steps=len(test))
-            forecast_ci = fitted_model.get_forecast(steps=len(test)).conf_int()
             
             # Calculate RMSE
             rmse = np.sqrt(mean_squared_error(test, forecast))
             mae = mean_absolute_error(test, forecast)
-            
-            
+            r2 = r2_score(test, forecast)
+            accuracy = (1 - (mae / np.mean(test))) * 100
+
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("RMSE", f"{rmse:.2f}")
-                st.metric("AIC", f"{fitted_model.aic:.2f}")
+                st.metric("R²", f"{r2:.2f}")
             with col2:
-                st.metric("BIC", f"{fitted_model.bic:.2f}")
-                st.metric("Log Likelihood", f"{fitted_model.llf:.2f}")
-            
+                st.metric("MAE", f"{fitted_model.bic:.2f}")
+                st.metric("Forecast Accuracy", f"{accuracy:.2f}%")
+
             st.write(f"**Model:** SARIMA({p},{d},{q})({P},{D},{Q})[{s}]")
             # Main forecast plot
             st.subheader("📈 Forecast vs Actual")
@@ -340,21 +342,33 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                         x=0.01
                     )
             )
-            fig.update_xaxes(title_text="Date" if has_datetime_index else "Time Period", row=1, col=1)
-            fig.update_xaxes(title_text="Date" if has_datetime_index else "Test Period", row=2, col=1)
+            fig.update_xaxes(title_text="Date", row=1, col=1)
+            fig.update_xaxes(title_text="Date", row=2, col=1)
             fig.update_yaxes(title_text="Price ($)", row=1, col=1)
             fig.update_yaxes(title_text="Price ($)", row=2, col=1)
 
             st.plotly_chart(fig, use_container_width=True)
-            
+
+            residuals = test.values - forecast.values
+            # Residuals plot
+            fg = px.bar(
+                df,
+                x=test_dates, 
+                y=residuals, 
+                title='Residuals of SARIMA Forecast',
+                labels={'x': 'Date', 'y': 'Residuals'},
+            )
+            fg.update_layout(height=400)
+            st.plotly_chart(fg, use_container_width=True)
+
             # Forecast statistics
             forecast_df = pd.DataFrame({
                 'Date': test.index,
                 'Actual': test.values,
                 'Forecast': forecast.values,
-                'Residuals': test.values - forecast.values,
-                'Abs Error': np.abs(test.values - forecast.values),
-                'Percentage_Error': ((test.values - forecast.values) / test.values) * 100
+                'Residuals': residuals,
+                'Abs Error': np.abs(residuals),
+                'Percentage_Error': (residuals / test.values) * 100
             })
             # Error statistics
             st.subheader("📊 Additional Analysis")
