@@ -8,6 +8,7 @@ import warnings
 warnings.filterwarnings('ignore')
 from statsmodels.tsa.arima.model import ARIMA  
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.preprocessing import MinMaxScaler
 
 st.title("📈 ARIMA Model Forecasting")
 st.write("ARIMA (AutoRegressive Integrated Moving Average) model for time series forecasting.")
@@ -24,7 +25,6 @@ df = st.session_state.df.copy()
 if 'Close' not in df.columns:
     st.error("❌ 'Close' column not found in the dataset. Please ensure your CSV has a 'Close' column.")
     st.stop()
-
 
 # Check if we have datetime index
 has_datetime_index = isinstance(df.index, pd.DatetimeIndex)
@@ -50,14 +50,19 @@ if missing_values > 0:
     st.warning(f"Found {missing_values} missing values in Close price. These will be filled using forward fill method.")
     df['Close'] = df['Close'].fillna(method='ffill')
 
+# Initialize and apply MinMaxScaler
+scaler = MinMaxScaler()
+close_prices = df['Close'].values.reshape(-1, 1)
+scaled_prices = scaler.fit_transform(close_prices).flatten()
+
 # Train-test split configuration
 st.subheader("Train-Test Split Configuration")
 train_percentage = st.slider("Training Data Percentage", min_value=60, max_value=90, value=80, step=5)
 train_size = int(len(df) * (train_percentage / 100))
 
-# Split the data
-train_data = df['Close'][:train_size]
-test_data = df['Close'][train_size:]
+# Split the scaled data
+train_data = scaled_prices[:train_size]
+test_data = scaled_prices[train_size:]
 
 # Get date indices for plotting
 if has_datetime_index:
@@ -66,7 +71,7 @@ if has_datetime_index:
     full_dates = df.index
 else:
     train_dates = list(range(len(train_data)))
-    test_dates = list(range(len(test_data), len(df)))
+    test_dates = list(range(len(train_data)), len(train_data) + len(test_data))
     full_dates = list(range(len(df)))
 
 col1, col2 = st.columns(2)
@@ -75,18 +80,18 @@ with col1:
 with col2:
     st.metric("Testing Data Size", len(test_data))
 
-# Visualize train-test split
+# Visualize train-test split (using original prices for better interpretation)
 fig_split = go.Figure()
 fig_split.add_trace(go.Scatter(
     x=train_dates, 
-    y=train_data, 
+    y=df['Close'][:train_size], 
     mode='lines', 
     name='Training Data',
     line=dict(color='blue')
 ))
 fig_split.add_trace(go.Scatter(
     x=test_dates, 
-    y=test_data, 
+    y=df['Close'][train_size:], 
     mode='lines', 
     name='Testing Data',
     line=dict(color='red')
@@ -94,7 +99,7 @@ fig_split.add_trace(go.Scatter(
 fig_split.update_layout(
     title=f'{st.session_state.stock_name} - Train-Test Split Visualization',
     xaxis_title='Date' if has_datetime_index else 'Time Period',
-    yaxis_title='Close Price',
+    yaxis_title='Close Price ($)',
     height=400,
     hovermode='x unified'
 )
@@ -107,6 +112,7 @@ st.header("🤖 ARIMA Model Training & Forecasting")
 
 # ARIMA Parameters
 st.subheader("🔧 ARIMA Parameters")
+future_days = st.slider("Days to Predict into Future", 1, 30, 14, 1)
 auto_search = st.radio(
     "Parameter Selection",
     ["Manual Selection", "Automatic Selection"],
@@ -122,7 +128,6 @@ if auto_search == "Manual Selection":
         d = st.number_input("D (Differencing)", min_value=0, max_value=3, value=1, help="Degree of differencing")
     with col3:
         q = st.number_input("Q (MA terms)", min_value=0, max_value=10, value=1, help="Moving average terms")
-
 
 # Train ARIMA Model
 if st.button("🚀 Train ARIMA Model", type="primary"):
@@ -185,7 +190,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 if best_model is None:
                     raise Exception("No suitable ARIMA model found. Try adjusting the parameter ranges.")
                     
-                st.subheader(f"🎯 Best ARIMA parameters found: ARIMA{best_order} (RMSE: {best_rmse:.4f})")                
+                st.subheader(f"🎯 Best ARIMA parameters found: ARIMA{best_order}")                
                 
             else:
                 # Use user-specified parameters
@@ -196,30 +201,52 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 forecast_result = best_model.forecast(steps=len(test_data))
                 best_rmse = np.sqrt(mean_squared_error(test_data, forecast_result))
             
+            # # Store the trained model in session state for reuse
+            # st.session_state.arima_model = best_model
+            # st.session_state.arima_scaler = scaler
+            # st.session_state.arima_order = best_order
+            
             # Immediately proceed with forecasting after successful model training
             st.write("---")
             st.header("📈 Forecasting Results")
             
             try:
-                # Generate forecasts
-                forecast_result = best_model.forecast(steps=len(test_data))
-                arima_forecast = forecast_result
+                # Generate forecasts for test period
+                test_forecast_scaled = best_model.forecast(steps=len(test_data))
                 
-                # Calculate metrics
-                rmse = np.sqrt(mean_squared_error(test_data, arima_forecast))
-                mae = mean_absolute_error(test_data, arima_forecast)
-                r2 = r2_score(test_data, arima_forecast)
-                accuracy = 100 * (1 - (rmse / np.mean(test_data)))
+                # Generate future forecasts
+                # Use the entire scaled dataset to make future predictions
+                full_model = ARIMA(scaled_prices, order=best_order)
+                full_fitted_model = full_model.fit()
+                future_forecast_scaled = full_fitted_model.forecast(steps=future_days)
+                
+                # Transform back to original scale
+                test_forecast = scaler.inverse_transform(test_forecast_scaled.reshape(-1, 1)).flatten()
+                future_forecast = scaler.inverse_transform(future_forecast_scaled.reshape(-1, 1)).flatten()
+                
+                # Calculate metrics for test period
+                test_actual = df['Close'][train_size:].values
+                rmse = np.sqrt(mean_squared_error(test_actual, test_forecast))
+                mae = mean_absolute_error(test_actual, test_forecast)
+                r2 = r2_score(test_actual, test_forecast)
+                accuracy = 100 * (1 - (rmse / np.mean(test_actual)))
                 
                 # Display metrics
-                st.subheader("📊 Forecast Accuracy Metrics")
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("RMSE", f"{rmse:.2f}", help="Root Mean Square Error")
-                    st.metric("R² Score", f"{r2:.2f}", help="Coefficient of Determination")
+                    st.metric("RMSE", f"${rmse:.2f}", help="Root Mean Square Error")
+                    st.metric("R² Score", f"{r2:.3f}", help="Coefficient of Determination")
                 with col2:
-                    st.metric("MAE", f"{mae:.2f}", help="Mean Absolute Error")
+                    st.metric("MAE", f"${mae:.2f}", help="Mean Absolute Error")
                     st.metric("Forecast Accuracy", f"{accuracy:.2f}%", help="Percentage of accuracy in forecast")
+                
+                # Create future dates
+                if has_datetime_index:
+                    last_date = df.index[-1]
+                    future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), 
+                                               periods=future_days, freq='D')
+                else:
+                    future_dates = list(range(len(df), len(df) + future_days))
                 
                 # Forecast visualization
                 st.subheader("📈 Forecast vs Actual")
@@ -227,7 +254,8 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 # Create comprehensive plot
                 fig = make_subplots(
                     rows=2, cols=1,
-                    subplot_titles=('Full Time Series with Forecast', 'Forecast Period (Zoomed)'),
+                    subplot_titles=('Full Time Series with Forecasts', 
+                                  'Test Period Validation (Zoomed)'),
                     vertical_spacing=0.2,
                     row_heights=[1, 0.5]
                 )
@@ -235,7 +263,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 # Full time series plot
                 fig.add_trace(go.Scatter(
                     x=train_dates, 
-                    y=train_data, 
+                    y=df['Close'][:train_size], 
                     mode='lines', 
                     name='Training Data',
                     line=dict(color='blue', width=1.5),
@@ -244,7 +272,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 
                 fig.add_trace(go.Scatter(
                     x=test_dates, 
-                    y=test_data, 
+                    y=test_actual, 
                     mode='lines', 
                     name='Actual (Test)',
                     line=dict(color='red', width=2),
@@ -253,17 +281,26 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 
                 fig.add_trace(go.Scatter(
                     x=test_dates, 
-                    y=arima_forecast, 
+                    y=test_forecast, 
                     mode='lines', 
-                    name='ARIMA Forecast',
+                    name='Test Forecast',
                     line=dict(color='green', width=2),
                     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
                 ), row=1, col=1)
                 
-                # Zoomed forecast period
+                fig.add_trace(go.Scatter(
+                    x=future_dates, 
+                    y=future_forecast, 
+                    mode='lines', 
+                    name='Future Forecast',
+                    line=dict(color='orange', width=2),
+                    hovertemplate='Date: %{x}<br>Future Forecast: $%{y:.2f}<extra></extra>'
+                ), row=1, col=1)
+                
+                # Zoomed test period
                 fig.add_trace(go.Scatter(
                     x=test_dates, 
-                    y=test_data, 
+                    y=test_actual, 
                     mode='lines+markers', 
                     name='Actual (Test)',
                     line=dict(color='red', width=2),
@@ -274,18 +311,29 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 
                 fig.add_trace(go.Scatter(
                     x=test_dates, 
-                    y=arima_forecast, 
+                    y=test_forecast, 
                     mode='lines+markers', 
-                    name='ARIMA Forecast',
+                    name='Test Forecast',
                     line=dict(color='green', width=2),
                     marker=dict(size=4),
                     showlegend=False,
                     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                ), row=2, col=1)
+                
+                fig.add_trace(go.Scatter(
+                    x=future_dates, 
+                    y=future_forecast, 
+                    mode='lines+markers', 
+                    name='Future Forecast',
+                    line=dict(color='orange', width=2),
+                    marker=dict(size=4),
+                    showlegend=False,
+                    hovertemplate='Date: %{x}<br>Future Forecast: $%{y:.2f}<extra></extra>'
                 ), row=2, col=1)
                 
                 fig.update_layout(
                     title=f'{st.session_state.stock_name} - ARIMA{best_order} Forecast Results',
-                    height=1000,
+                    height=1200,
                     hovermode='x unified',
                     legend=dict(
                         yanchor="top",
@@ -302,65 +350,85 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 
                 st.plotly_chart(fig, use_container_width=True)
                 
-                residuals = test_data.values - arima_forecast
+                # Residuals plot
+                residuals = test_actual - test_forecast
                 fg = px.bar(
-                df,
-                x=test_dates, 
-                y=residuals, 
-                title='Residuals of ARIMA Forecast',
-                labels={'x': 'Date', 'y': 'Residuals'},
+                    x=test_dates, 
+                    y=residuals, 
+                    title='Residuals of ARIMA Forecast (Test Period)',
+                    labels={'x': 'Date', 'y': 'Residuals ($)'},
                 )
                 fg.update_layout(height=400)
                 st.plotly_chart(fg, use_container_width=True)
                 
                 # Additional metrics
-                st.subheader("📊 Additional Analysis")
-
+                st.subheader("📈 Historical Prediction Statistics")
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Mean Residual", f"{np.mean(residuals):.4f}")
-                    st.metric("Std Residual", f"{np.std(residuals):.4f}")
+                    st.metric("Mean Residual", f"${np.mean(residuals):.4f}")
+                    st.metric("Std Residual", f"${np.std(residuals):.4f}")
                 
                 with col2:
-                    st.metric("Min Error", f"{np.min(residuals):.2f}")
-                    st.metric("Max Error", f"{np.max(residuals):.2f}")
+                    st.metric("Min Error", f"${np.min(residuals):.2f}")
+                    st.metric("Max Error", f"${np.max(residuals):.2f}")
                 
-                # Forecast table
-                st.subheader("📋 Detailed Forecast Results")
+                # Forecast tables
                 
-                
-                forecast_df = pd.DataFrame({
-                        'Date': test_dates,
-                        'Actual': test_data.values,
-                        'Forecast': arima_forecast,
-                        'Residual': residuals,
-                        'Absolute_Error': np.abs(residuals),
-                        'Percentage_Error': (residuals / test_data.values) * 100
+                # Test period results
+                test_forecast_df = pd.DataFrame({
+                    'Date': test_dates,
+                    'Actual': test_actual,
+                    'Forecast': test_forecast,
+                    'Residual': residuals,
+                    'Absolute_Error': np.abs(residuals),
+                    'Percentage_Error': (residuals / test_actual) * 100
                 })
                 
-                # Format the dataframe for better display
-                forecast_df['Actual'] = forecast_df['Actual'].round(2)
-                forecast_df['Forecast'] = forecast_df['Forecast'].round(2)
-                forecast_df['Residual'] = forecast_df['Residual'].round(4)
-                forecast_df['Absolute_Error'] = forecast_df['Absolute_Error'].round(4)
-                forecast_df['Percentage_Error'] = forecast_df['Percentage_Error'].round(2)
-                
-                st.dataframe(forecast_df, use_container_width=True)
+                # Format the test dataframe
+                test_forecast_df['Actual'] = test_forecast_df['Actual'].round(2)
+                test_forecast_df['Forecast'] = test_forecast_df['Forecast'].round(2)
+                test_forecast_df['Residual'] = test_forecast_df['Residual'].round(4)
+                test_forecast_df['Absolute_Error'] = test_forecast_df['Absolute_Error'].round(4)
+                test_forecast_df['Percentage_Error'] = test_forecast_df['Percentage_Error'].round(2)
                 
                 
-                # Model interpretation
-                st.subheader("💡 Model Interpretation")
-                interpretation_text = f"""
-                **ARIMA{best_order} Model Components:**
-                - **AR({best_order[0]})**: Uses {best_order[0]} previous values to predict the next value
-                - **I({best_order[1]})**: Data was differenced {best_order[1]} time(s) to make it stationary
-                - **MA({best_order[2]})**: Uses {best_order[2]} previous forecast error(s) in the prediction
+                with st.expander("📊 Validation Details", expanded=True):
+                    st.dataframe(test_forecast_df, use_container_width=True)
                 
-                **Performance Summary:**
-                - RMSE of {rmse:.2f} indicates the average prediction error
-                - MAE of {mae:.2f} shows the average absolute error
-                """
-                st.markdown(interpretation_text)
+                
+                # Summary of future predictions
+                st.subheader("🔮 Future Price Predictions")
+
+                current_price = df['Close'].iloc[-1]
+                price_change = future_forecast[-1] - current_price
+                price_change_pct = (price_change / current_price) * 100
+                
+                future_forecast_df = pd.DataFrame({
+                    'Date': future_dates,
+                    'Predicted Price': future_forecast,
+                    'Price Change': future_forecast - current_price,
+                    'Price Change (%)': ((future_forecast - current_price) / current_price) * 100
+                })
+                
+                future_fig = px.line(
+                future_forecast_df,
+                x='Date', 
+                y='Predicted Price', 
+                title='Future Price Predictions',
+                markers=True,
+                color_discrete_sequence=['orange'],
+                line_shape='linear',
+                hover_data={'Date': True, 'Predicted Price': ':.2f'},
+                labels={'x': 'Date', 'y': 'Predicted Price ($)'},
+                )
+                future_fig.update_layout(height=400)
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.plotly_chart(future_fig, use_container_width=True)
+
+                # Future predictions table
+                with col2:
+                    st.dataframe(future_forecast_df, use_container_width=True)
                 
             except Exception as e:
                 st.error(f"❌ Error during forecasting: {str(e)}")
@@ -370,8 +438,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
             st.write("💡 Try adjusting the parameters or check your data for any issues.")
             st.write("Common issues: insufficient data, too many parameters, or non-numeric data.")
 
-
-with st.expander("ℹ️ About ARIMA Models"):
+with st.expander("ℹ️ About ARIMA Models & Scaling"):
     st.markdown("""
     **ARIMA (AutoRegressive Integrated Moving Average)** models are used for time series forecasting.
     
@@ -379,15 +446,4 @@ with st.expander("ℹ️ About ARIMA Models"):
     - **AR (p)**: Autoregressive component - uses past values to predict future values
     - **I (d)**: Integrated component - degree of differencing to make data stationary
     - **MA (q)**: Moving average component - uses past forecast errors in prediction
-    
-    **When to use ARIMA:**
-    - Time series data with trends
-    - Data that can be made stationary through differencing
-    - When you need interpretable results
-    - Medium-term forecasting (not too far into the future)
-    
-    **Limitations:**
-    - Assumes linear relationships
-    - May not capture complex seasonal patterns (consider SARIMA for seasonality)
-    - Performance degrades for long-term forecasts
     """)

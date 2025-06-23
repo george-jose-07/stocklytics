@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.preprocessing import MinMaxScaler
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from scipy import stats
 import plotly.express as px
@@ -51,10 +52,22 @@ st.subheader("Train-Test Split Configuration")
 train_ratio = st.slider("Training Data Ratio", 60, 90, 80,1)
 train_ratio = train_ratio / 100.0
 
-# Prepare data
-train_size = int(len(df) * train_ratio)
-train = df.iloc[:train_size]['Close']
-test = df.iloc[train_size:]['Close']
+# Initialize MinMaxScaler
+scaler = MinMaxScaler()
+
+# Scale the Close prices
+close_scaled = scaler.fit_transform(df[['Close']])
+df_scaled = df.copy()
+df_scaled['Close'] = close_scaled.flatten()
+
+# Prepare scaled data
+train_size = int(len(df_scaled) * train_ratio)
+train = df_scaled.iloc[:train_size]['Close']
+test = df_scaled.iloc[train_size:]['Close']
+
+# Get original scale data for display
+train_original = df.iloc[:train_size]['Close']
+test_original = df.iloc[train_size:]['Close']
 
 # Get date indices for plotting
 if has_datetime_index:
@@ -72,18 +85,18 @@ with col1:
 with col2:
     st.metric("Testing Data Size", len(test))
 
-# Visualize train-test split
+# Visualize train-test split (using original scale for display)
 fig_split = go.Figure()
 fig_split.add_trace(go.Scatter(
     x=train_dates, 
-    y=train, 
+    y=train_original, 
     mode='lines', 
     name='Training Data',
     line=dict(color='blue')
 ))
 fig_split.add_trace(go.Scatter(
     x=test_dates, 
-    y=test, 
+    y=test_original, 
     mode='lines', 
     name='Testing Data',
     line=dict(color='red')
@@ -101,6 +114,7 @@ st.write("---")
 
 
 st.header("🤖 SARIMA Model Training & Forecasting")
+future_days = st.slider("Days to Predict into Future", 1, 30, 14, 1)
 auto_search = st.radio(
     "Parameter Selection",
     ["Manual Selection", "Grid Search"],
@@ -242,7 +256,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                 best_params = (p, d, q)
                 best_seasonal_params = (P, D, Q, s)
             
-            # Fit the final model
+            # Fit the final model on scaled data
             with st.spinner("Fitting final SARIMA model..."):
                 model = SARIMAX(train,
                               order=(p, d, q),
@@ -252,23 +266,50 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                               enforce_invertibility=False)
                 
                 fitted_model = model.fit(disp=False)
-
-            st.header("📈 Forecast Results")
-            # Generate forecasts
-            forecast = fitted_model.forecast(steps=len(test))
             
-            # Calculate RMSE
-            rmse = np.sqrt(mean_squared_error(test, forecast))
-            mae = mean_absolute_error(test, forecast)
-            r2 = r2_score(test, forecast)
-            accuracy = (1 - (mae / np.mean(test))) * 100
+            # Generate forecasts on scaled data for test period
+            forecast_scaled = fitted_model.forecast(steps=len(test))
+            
+            # For future predictions, fit model on entire dataset (train + test)
+            with st.spinner("Fitting model on full dataset for future predictions..."):
+                full_data_scaled = df_scaled['Close']  # Use entire scaled dataset
+                future_model = SARIMAX(full_data_scaled,
+                                     order=(p, d, q),
+                                     seasonal_order=(P, D, Q, s),
+                                     trend=include_trend,
+                                     enforce_stationarity=False,
+                                     enforce_invertibility=False)
+                
+                future_fitted_model = future_model.fit(disp=False)
+                
+            # Generate future forecast on scaled data using full dataset model
+            future_forecast_scaled = future_fitted_model.forecast(steps=future_days)
+            
+            # Transform back to original scale
+            forecast = scaler.inverse_transform(forecast_scaled.values.reshape(-1, 1)).flatten()
+            future_forecast = scaler.inverse_transform(future_forecast_scaled.values.reshape(-1, 1)).flatten()
+            
+            if has_datetime_index:
+                    last_date = df.index[-1]
+                    future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), 
+                                               periods=future_days, freq='D')
+            else:
+                    future_dates = list(range(len(df), len(df) + future_days))
 
+            # Calculate RMSE using original scale
+            rmse = np.sqrt(mean_squared_error(test_original, forecast))
+            mae = mean_absolute_error(test_original, forecast)
+            r2 = r2_score(test_original, forecast)
+            accuracy = (1 - (mae / np.mean(test_original))) * 100
+
+            st.write("---")
+            st.header("📈 Forecasting Results")
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("RMSE", f"{rmse:.2f}")
                 st.metric("R²", f"{r2:.2f}")
             with col2:
-                st.metric("MAE", f"{fitted_model.bic:.2f}")
+                st.metric("MAE", f"{mae:.2f}")
                 st.metric("Forecast Accuracy", f"{accuracy:.2f}%")
 
             st.write(f"**Model:** SARIMA({p},{d},{q})({P},{D},{Q})[{s}]")
@@ -283,7 +324,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
             # Full time series plot
             fig.add_trace(go.Scatter(
                     x=train_dates, 
-                    y=train, 
+                    y=train_original, 
                     mode='lines', 
                     name='Training Data',
                     line=dict(color='blue', width=1.5),
@@ -292,7 +333,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                 
             fig.add_trace(go.Scatter(
                     x=test_dates, 
-                    y=test, 
+                    y=test_original, 
                     mode='lines', 
                     name='Actual (Test)',
                     line=dict(color='red', width=2),
@@ -308,10 +349,19 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
             ), row=1, col=1)
 
+            fig.add_trace(go.Scatter(
+                    x=future_dates, 
+                    y=future_forecast, 
+                    mode='lines', 
+                    name='Future Forecast',
+                    line=dict(color='orange', width=2),
+                    hovertemplate='Date: %{x}<br>Future Forecast: $%{y:.2f}<extra></extra>'
+            ), row=1, col=1)
+
             # Zoomed forecast period
             fig.add_trace(go.Scatter(
                     x=test_dates, 
-                    y=test, 
+                    y=test_original, 
                     mode='lines+markers', 
                     name='Actual (Test)',
                     line=dict(color='red', width=2),
@@ -329,6 +379,17 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                     marker=dict(size=4),
                     showlegend=False,
                     hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+            ), row=2, col=1)
+
+            fig.add_trace(go.Scatter(
+                    x=future_dates, 
+                    y=future_forecast, 
+                    mode='lines+markers', 
+                    name='Future Forecast',
+                    line=dict(color='orange', width=2),
+                    marker=dict(size=4),
+                    showlegend=False,
+                    hovertemplate='Date: %{x}<br>Future Forecast: $%{y:.2f}<extra></extra>'
             ), row=2, col=1)
 
             fig.update_layout(
@@ -349,7 +410,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
 
             st.plotly_chart(fig, use_container_width=True)
 
-            residuals = test.values - forecast.values
+            residuals = test_original.values - forecast
             # Residuals plot
             fg = px.bar(
                 df,
@@ -363,15 +424,15 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
 
             # Forecast statistics
             forecast_df = pd.DataFrame({
-                'Date': test.index,
-                'Actual': test.values,
-                'Forecast': forecast.values,
+                'Date': test_original.index,
+                'Actual': test_original.values,
+                'Forecast': forecast,
                 'Residuals': residuals,
                 'Abs Error': np.abs(residuals),
-                'Percentage_Error': (residuals / test.values) * 100
+                'Percentage_Error': (residuals / test_original.values) * 100
             })
             # Error statistics
-            st.subheader("📊 Additional Analysis")
+            st.subheader("📈 Historical Prediction Statistics")
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Mean Residual", f"{np.mean(forecast_df['Residuals']):.2f}")
@@ -381,17 +442,45 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                 st.metric("Max Error", f"{np.max(forecast_df['Residuals']):.2f}")
                 
             # Forecast table
-            st.subheader("📋 Detailed Forecast Results")
-            st.dataframe(forecast_df)
+            with st.expander("📊 Validation Details", expanded=True):
+                st.dataframe(forecast_df)
+
+            # Summary of future predictions
+            st.subheader("🔮 Future Price Predictions")
+
+            current_price = df['Close'].iloc[-1]
+            price_change = future_forecast[-1] - current_price
+            price_change_pct = (price_change / current_price) * 100
+
+            future_forecast_df = pd.DataFrame({
+                'Date': future_dates,
+                'Predicted Price': future_forecast,
+                'Price Change': future_forecast - current_price,
+                'Price Change (%)': ((future_forecast - current_price) / current_price) * 100
+            })
+                    
+            future_fig = px.line(
+                future_forecast_df,
+                x='Date', 
+                y='Predicted Price', 
+                title='Future Price Predictions',
+                markers=True,
+                color_discrete_sequence=['orange'],
+                line_shape='linear',
+                hover_data={'Date': True, 'Predicted Price': ':.2f'},
+                labels={'x': 'Date', 'y': 'Predicted Price ($)'},
+            )
+            future_fig.update_layout(height=400)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.plotly_chart(future_fig, use_container_width=True)
+
+            # Future predictions table
+            with col2:
+                st.dataframe(future_forecast_df, use_container_width=True)
             
         except Exception as e:
             st.error(f"❌ Error during SARIMA modeling: {str(e)}")
-            st.write("**Possible solutions:**")
-            st.write("- Try different parameter values")
-            st.write("- Check if your data has enough observations")
-            st.write("- Adjust the seasonal period")
-            st.write("- Try different trend components")
-            st.write("- Ensure your data doesn't have missing values")
 
 # Information about SARIMA
 with st.expander("ℹ️ About SARIMA Forecasting"):
@@ -412,10 +501,4 @@ with st.expander("ℹ️ About SARIMA Forecasting"):
       - 'ct': constant + linear trend
       - 'ctt': constant + linear + quadratic trend
       - 'n': no trend
-    
-    **Best Practices:**
-    - Start with grid search to identify good parameter ranges
-    - Check stationarity before modeling
-    - Validate model with residual analysis
-    - Use seasonal period appropriate for your data frequency
     """)

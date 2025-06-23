@@ -84,7 +84,7 @@ with tab1:
     if file is not None:
         try:
             df = pd.read_csv(file)
-                
+            st.rerun()
             # Try to identify and parse date column
             date_column = None
             potential_date_columns = ['Date', 'date', 'DATE', 'Datetime', 'datetime', 'Time', 'time']
