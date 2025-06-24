@@ -328,7 +328,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                     mode='lines', 
                     name='Training Data',
                     line=dict(color='blue', width=1.5),
-                    hovertemplate='Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Price: %{y:.2f}<extra></extra>'
             ), row=1, col=1)
                 
             fig.add_trace(go.Scatter(
@@ -337,7 +337,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                     mode='lines', 
                     name='Actual (Test)',
                     line=dict(color='red', width=2),
-                    hovertemplate='Date: %{x}<br>Actual: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Actual: %{y:.2f}<extra></extra>'
             ), row=1, col=1)
                 
             fig.add_trace(go.Scatter(
@@ -346,7 +346,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                     mode='lines', 
                     name='SARIMA Forecast',
                     line=dict(color='green', width=2),
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>'
             ), row=1, col=1)
 
             fig.add_trace(go.Scatter(
@@ -355,7 +355,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                     mode='lines', 
                     name='Future Forecast',
                     line=dict(color='orange', width=2),
-                    hovertemplate='Date: %{x}<br>Future Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Future Forecast: %{y:.2f}<extra></extra>'
             ), row=1, col=1)
 
             # Zoomed forecast period
@@ -367,7 +367,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                     line=dict(color='red', width=2),
                     marker=dict(size=4),
                     showlegend=False,
-                    hovertemplate='Date: %{x}<br>Actual: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Actual: %{y:.2f}<extra></extra>'
             ), row=2, col=1)
                 
             fig.add_trace(go.Scatter(
@@ -378,7 +378,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                     line=dict(color='green', width=2),
                     marker=dict(size=4),
                     showlegend=False,
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>'
             ), row=2, col=1)
 
             fig.add_trace(go.Scatter(
@@ -389,7 +389,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                     line=dict(color='orange', width=2),
                     marker=dict(size=4),
                     showlegend=False,
-                    hovertemplate='Date: %{x}<br>Future Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Future Forecast: %{y:.2f}<extra></extra>'
             ), row=2, col=1)
 
             fig.update_layout(
@@ -405,8 +405,8 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
             )
             fig.update_xaxes(title_text="Date", row=1, col=1)
             fig.update_xaxes(title_text="Date", row=2, col=1)
-            fig.update_yaxes(title_text="Price ($)", row=1, col=1)
-            fig.update_yaxes(title_text="Price ($)", row=2, col=1)
+            fig.update_yaxes(title_text="Price ", row=1, col=1)
+            fig.update_yaxes(title_text="Price ", row=2, col=1)
 
             st.plotly_chart(fig, use_container_width=True)
 
@@ -468,7 +468,7 @@ if st.button("🚀 Run SARIMA Forecast", type="primary"):
                 color_discrete_sequence=['orange'],
                 line_shape='linear',
                 hover_data={'Date': True, 'Predicted Price': ':.2f'},
-                labels={'x': 'Date', 'y': 'Predicted Price ($)'},
+                labels={'x': 'Date', 'y': 'Predicted Price '},
             )
             future_fig.update_layout(height=400)
             col1, col2 = st.columns(2)

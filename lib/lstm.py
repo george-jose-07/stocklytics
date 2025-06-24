@@ -102,7 +102,7 @@ col1, col2 = st.columns(2)
 with col1:
     lookback = st.slider("Lookback Window", 10, 60, 30, 5)
 with col2:
-    lstm_units = st.slider("LSTM Units", 25, 100, 50, 25)
+    lstm_units = st.slider("LSTM Units", 25, 100, 50, 10)
 
 batch_size = st.selectbox("Batch Size", [1, 2, 4, 8, 16, 32])
 
@@ -145,8 +145,8 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
             
             # Train the model
             history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size)
-            
-            progress_bar.progress(1.0)
+                
+            progress_bar.progress(1.0)  # Complete the progress bar
             status_text.text('Training completed!')
             
             # Predict on test set
@@ -224,7 +224,7 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     mode='lines', 
                     name='Training Data',
                     line=dict(color='blue', width=1.5),
-                    hovertemplate='Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Price: %{y:.2f}<extra></extra>'
             ), row=1, col=1)
                 
             fig.add_trace(go.Scatter(
@@ -233,7 +233,7 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     mode='lines', 
                     name='Actual (Test)',
                     line=dict(color='red', width=2),
-                    hovertemplate='Date: %{x}<br>Actual: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Actual: %{y:.2f}<extra></extra>'
             ), row=1, col=1)
                 
             fig.add_trace(go.Scatter(
@@ -242,7 +242,7 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     mode='lines', 
                     name='LSTM Forecast',
                     line=dict(color='green', width=2),
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>'
             ), row=1, col=1)
 
             fig.add_trace(go.Scatter(
@@ -251,7 +251,7 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     mode='lines', 
                     name='Future Predictions',
                     line=dict(color='orange', width=2),
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>'
             ), row=1, col=1)
 
             # Zoomed forecast period
@@ -263,7 +263,7 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     line=dict(color='red', width=2),
                     marker=dict(size=4),
                     showlegend=False,
-                    hovertemplate='Date: %{x}<br>Actual: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Actual: %{y:.2f}<extra></extra>'
             ), row=2, col=1)
 
             fig.add_trace(go.Scatter(
@@ -274,7 +274,7 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     line=dict(color='green', width=2),
                     marker=dict(size=4),
                     showlegend=False,
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>'
             ), row=2, col=1)
             fig.add_trace(go.Scatter(
                     x=future_dates, 
@@ -284,7 +284,7 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                     line=dict(color='orange', width=2),
                     marker=dict(size=4),
                     showlegend=False,
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>'
             ), row=2, col=1)
 
             fig.update_layout(
@@ -300,8 +300,8 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
             )
             fig.update_xaxes(title_text="Date" if has_datetime_index else "Time Period", row=1, col=1)
             fig.update_xaxes(title_text="Date" if has_datetime_index else "Test Period", row=2, col=1)
-            fig.update_yaxes(title_text="Price ($)", row=1, col=1)
-            fig.update_yaxes(title_text="Price ($)", row=2, col=1)
+            fig.update_yaxes(title_text="Price ", row=1, col=1)
+            fig.update_yaxes(title_text="Price ", row=2, col=1)
 
             st.plotly_chart(fig, use_container_width=True)
             
@@ -352,11 +352,7 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                 'Price Change': future_predictions.flatten() - current_price,
                 'Change %': ((future_predictions.flatten() - current_price) / current_price) * 100
             })
-            
-            # # Format the dataframe for better display
-            future_df['Predicted Price'] = future_df['Predicted Price'].apply(lambda x: f"${x:.2f}")
-            future_df['Price Change'] = future_df['Price Change'].apply(lambda x: f"${x:+.2f}")
-            future_df['Change %'] = future_df['Change %'].apply(lambda x: f"{x:+.2f}%")
+
             
             future_fig = px.line(
                 future_df,
@@ -367,7 +363,7 @@ if st.button("🚀 Run LSTM Forecast", type="primary"):
                 color_discrete_sequence=['orange'],
                 line_shape='linear',
                 hover_data={'Date': True, 'Predicted Price': ':.2f'},
-                labels={'x': 'Date', 'y': 'Predicted Price ($)'},
+                labels={'x': 'Date', 'y': 'Predicted Price'},
                 )
             future_fig.update_layout(height=400)
 

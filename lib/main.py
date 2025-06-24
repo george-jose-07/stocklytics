@@ -144,8 +144,6 @@ if 'df' in st.session_state and st.session_state.df is not None:
     with col2:
         st.metric("Total Columns", len(df.columns))
         
-    # Show only the required columns that are available
-    st.write("**Available Columns:**", ", ".join(df.columns.tolist()))
         
     # Show date range if available
     if df.index.dtype.kind == 'M':  # Check if index is datetime

@@ -8,7 +8,8 @@ import warnings
 warnings.filterwarnings('ignore')
 from statsmodels.tsa.arima.model import ARIMA  
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler
+
 
 st.title("📈 ARIMA Model Forecasting")
 st.write("ARIMA (AutoRegressive Integrated Moving Average) model for time series forecasting.")
@@ -51,7 +52,7 @@ if missing_values > 0:
     df['Close'] = df['Close'].fillna(method='ffill')
 
 # Initialize and apply MinMaxScaler
-scaler = MinMaxScaler()
+scaler = RobustScaler()
 close_prices = df['Close'].values.reshape(-1, 1)
 scaled_prices = scaler.fit_transform(close_prices).flatten()
 
@@ -121,6 +122,7 @@ auto_search = st.radio(
 
 # Manual parameter input
 if auto_search == "Manual Selection":
+    st.subheader("Manual ARIMA Parameters")
     col1, col2, col3 = st.columns(3)
     with col1:
         p = st.number_input("P (AR terms)", min_value=0, max_value=10, value=1, help="Autoregressive terms")
@@ -128,6 +130,15 @@ if auto_search == "Manual Selection":
         d = st.number_input("D (Differencing)", min_value=0, max_value=3, value=1, help="Degree of differencing")
     with col3:
         q = st.number_input("Q (MA terms)", min_value=0, max_value=10, value=1, help="Moving average terms")
+else:
+    st.subheader("Search Ranges")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        p_range = st.slider("AR order range (p)", 1, 5, (0, 2))
+    with col2:
+        d_range = st.slider("Integration order range (d)", 1, 3, (0, 1))
+    with col3:
+        q_range = st.slider("MA order range (q)", 1, 5, (0, 2))
 
 # Train ARIMA Model
 if st.button("🚀 Train ARIMA Model", type="primary"):
@@ -144,9 +155,9 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 combinations = []
                 
                 # More systematic parameter search
-                for p_val in range(0, 4):
-                    for d_val in range(0, 3):
-                        for q_val in range(0, 4):
+                for p_val in range(p_range[0], p_range[1] + 1):
+                    for d_val in range(d_range[0], d_range[1] + 1):
+                        for q_val in range(q_range[0], q_range[1] + 1):
                             combinations.append((p_val, d_val, q_val))
                 
                 total_combinations = len(combinations)
@@ -234,10 +245,10 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 # Display metrics
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("RMSE", f"${rmse:.2f}", help="Root Mean Square Error")
+                    st.metric("RMSE", f"{rmse:.2f}", help="Root Mean Square Error")
                     st.metric("R² Score", f"{r2:.3f}", help="Coefficient of Determination")
                 with col2:
-                    st.metric("MAE", f"${mae:.2f}", help="Mean Absolute Error")
+                    st.metric("MAE", f"{mae:.2f}", help="Mean Absolute Error")
                     st.metric("Forecast Accuracy", f"{accuracy:.2f}%", help="Percentage of accuracy in forecast")
                 
                 # Create future dates
@@ -267,7 +278,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     mode='lines', 
                     name='Training Data',
                     line=dict(color='blue', width=1.5),
-                    hovertemplate='Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Price: %{y:.2f}<extra></extra>'
                 ), row=1, col=1)
                 
                 fig.add_trace(go.Scatter(
@@ -276,7 +287,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     mode='lines', 
                     name='Actual (Test)',
                     line=dict(color='red', width=2),
-                    hovertemplate='Date: %{x}<br>Actual: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Actual: %{y:.2f}<extra></extra>'
                 ), row=1, col=1)
                 
                 fig.add_trace(go.Scatter(
@@ -285,7 +296,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     mode='lines', 
                     name='Test Forecast',
                     line=dict(color='green', width=2),
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>'
                 ), row=1, col=1)
                 
                 fig.add_trace(go.Scatter(
@@ -294,7 +305,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     mode='lines', 
                     name='Future Forecast',
                     line=dict(color='orange', width=2),
-                    hovertemplate='Date: %{x}<br>Future Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Future Forecast: %{y:.2f}<extra></extra>'
                 ), row=1, col=1)
                 
                 # Zoomed test period
@@ -306,7 +317,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     line=dict(color='red', width=2),
                     marker=dict(size=4),
                     showlegend=False,
-                    hovertemplate='Date: %{x}<br>Actual: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Actual: %{y:.2f}<extra></extra>'
                 ), row=2, col=1)
                 
                 fig.add_trace(go.Scatter(
@@ -317,7 +328,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     line=dict(color='green', width=2),
                     marker=dict(size=4),
                     showlegend=False,
-                    hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>'
                 ), row=2, col=1)
                 
                 fig.add_trace(go.Scatter(
@@ -328,7 +339,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     line=dict(color='orange', width=2),
                     marker=dict(size=4),
                     showlegend=False,
-                    hovertemplate='Date: %{x}<br>Future Forecast: $%{y:.2f}<extra></extra>'
+                    hovertemplate='Date: %{x}<br>Future Forecast: %{y:.2f}<extra></extra>'
                 ), row=2, col=1)
                 
                 fig.update_layout(
@@ -345,8 +356,8 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 
                 fig.update_xaxes(title_text="Date" if has_datetime_index else "Time Period", row=1, col=1)
                 fig.update_xaxes(title_text="Date" if has_datetime_index else "Test Period", row=2, col=1)
-                fig.update_yaxes(title_text="Price ($)", row=1, col=1)
-                fig.update_yaxes(title_text="Price ($)", row=2, col=1)
+                fig.update_yaxes(title_text="Price", row=1, col=1)
+                fig.update_yaxes(title_text="Price", row=2, col=1)
                 
                 st.plotly_chart(fig, use_container_width=True)
                 
@@ -356,7 +367,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     x=test_dates, 
                     y=residuals, 
                     title='Residuals of ARIMA Forecast (Test Period)',
-                    labels={'x': 'Date', 'y': 'Residuals ($)'},
+                    labels={'x': 'Date', 'y': 'Residuals'},
                 )
                 fg.update_layout(height=400)
                 st.plotly_chart(fg, use_container_width=True)
@@ -365,12 +376,12 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 st.subheader("📈 Historical Prediction Statistics")
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Mean Residual", f"${np.mean(residuals):.4f}")
-                    st.metric("Std Residual", f"${np.std(residuals):.4f}")
+                    st.metric("Mean Residual", f"{np.mean(residuals):.4f}")
+                    st.metric("Std Residual", f"{np.std(residuals):.4f}")
                 
                 with col2:
-                    st.metric("Min Error", f"${np.min(residuals):.2f}")
-                    st.metric("Max Error", f"${np.max(residuals):.2f}")
+                    st.metric("Min Error", f"{np.min(residuals):.2f}")
+                    st.metric("Max Error", f"{np.max(residuals):.2f}")
                 
                 # Forecast tables
                 
@@ -419,7 +430,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 color_discrete_sequence=['orange'],
                 line_shape='linear',
                 hover_data={'Date': True, 'Predicted Price': ':.2f'},
-                labels={'x': 'Date', 'y': 'Predicted Price ($)'},
+                labels={'x': 'Date', 'y': 'Predicted Price '},
                 )
                 future_fig.update_layout(height=400)
                 col1, col2 = st.columns(2)
