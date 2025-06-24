@@ -8,3 +8,4 @@ scikit-learn
 tensorflow
 prophet
 plotly
+yfinance
