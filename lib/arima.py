@@ -52,7 +52,7 @@ if missing_values > 0:
     df['Close'] = df['Close'].fillna(method='ffill')
 
 # Initialize and apply MinMaxScaler
-scaler = RobustScaler()
+scaler = MinMaxScaler()
 close_prices = df['Close'].values.reshape(-1, 1)
 scaled_prices = scaler.fit_transform(close_prices).flatten()
 
@@ -72,7 +72,7 @@ if has_datetime_index:
     full_dates = df.index
 else:
     train_dates = list(range(len(train_data)))
-    test_dates = list(range(len(train_data)), len(train_data) + len(test_data))
+    test_dates = list(range(len(train_data),len(df)))
     full_dates = list(range(len(df)))
 
 col1, col2 = st.columns(2)
@@ -125,21 +125,20 @@ if auto_search == "Manual Selection":
     st.subheader("Manual ARIMA Parameters")
     col1, col2, col3 = st.columns(3)
     with col1:
-        p = st.number_input("P (AR terms)", min_value=0, max_value=10, value=1, help="Autoregressive terms")
+        p = st.number_input("P (AR terms)", min_value=0, max_value=5, value=1, help="Autoregressive terms")
     with col2:
-        d = st.number_input("D (Differencing)", min_value=0, max_value=3, value=1, help="Degree of differencing")
+        d = st.number_input("D (Differencing)", min_value=0, max_value=2, value=1, help="Degree of differencing")
     with col3:
-        q = st.number_input("Q (MA terms)", min_value=0, max_value=10, value=1, help="Moving average terms")
+        q = st.number_input("Q (MA terms)", min_value=0, max_value=5, value=1, help="Moving average terms")
 else:
     st.subheader("Search Ranges")
-    col1, col2, col3 = st.columns(3)
+    col1, col3 = st.columns(2)
     with col1:
         p_range = st.slider("AR order range (p)", 1, 5, (0, 2))
-    with col2:
-        d_range = st.slider("Integration order range (d)", 1, 3, (0, 1))
     with col3:
         q_range = st.slider("MA order range (q)", 1, 5, (0, 2))
 
+d_range = (0, 2)
 # Train ARIMA Model
 if st.button("🚀 Train ARIMA Model", type="primary"):
     with st.spinner("🔄 Training ARIMA Model... This may take a moment."):
@@ -152,6 +151,8 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
             if auto_search == "Automatic Selection":
                 # Try different parameter combinations
                 progress_bar = st.progress(0)
+                status_text = st.empty()
+                current_combination = 0
                 combinations = []
                 
                 # More systematic parameter search
@@ -164,6 +165,10 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                 successful_fits = 0
                 
                 for i, (p_val, d_val, q_val) in enumerate(combinations):
+                    current_combination += 1
+                    progress = current_combination / total_combinations
+                    progress_bar.progress(progress)
+                    status_text.text(f"Testing SARIMA({p_val},{d_val},{q_val}) - {current_combination}/{total_combinations}")
                     try:
                         model = ARIMA(train_data, order=(p_val, d_val, q_val))
                         fitted_model = model.fit()
@@ -186,7 +191,6 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                         
                         successful_fits += 1
                             
-                        progress_bar.progress((i + 1) / total_combinations)
                     except Exception as e:
                         results_log.append({
                             'Order': f"({p_val},{d_val},{q_val})",
@@ -197,6 +201,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                         continue
                 
                 progress_bar.empty()
+                status_text.text("✅ search completed!")
                 
                 if best_model is None:
                     raise Exception("No suitable ARIMA model found. Try adjusting the parameter ranges.")

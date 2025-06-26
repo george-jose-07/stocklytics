@@ -76,7 +76,7 @@ if has_datetime_index:
     full_dates = df.index
 else:
     train_dates = list(range(len(train)))
-    test_dates = list(range(len(test), len(df)))
+    test_dates = list(range(len(train), len(df)))
     full_dates = list(range(len(df)))
 
 col1, col2 = st.columns(2)
@@ -127,40 +127,43 @@ if auto_search == "Manual Selection":
     with col1:
         p = st.number_input("AR order (p)", min_value=0, max_value=5, value=1)
     with col2:
-        d = st.number_input("Integration order (d)", min_value=0, max_value=3, value=1)
+        d = st.number_input("Integration order (d)", min_value=0, max_value=2, value=1)
     with col3:
         q = st.number_input("MA order (q)", min_value=0, max_value=5, value=1)
     
     st.subheader("Seasonal Parameters (P,D,Q,s)")
     col1, col2, col3 = st.columns(3)
     with col1:
-        P = st.number_input("Seasonal AR (P)", min_value=0, max_value=3, value=1)
+        P = st.number_input("Seasonal AR (P)", min_value=0, max_value=2, value=1)
     with col2:
-        D = st.number_input("Seasonal Integration (D)", min_value=0, max_value=2, value=1)
+        D = st.number_input("Seasonal Integration (D)", min_value=0, max_value=1, value=1)
     with col3:
-        Q = st.number_input("Seasonal MA (Q)", min_value=0, max_value=3, value=1)
+        Q = st.number_input("Seasonal MA (Q)", min_value=0, max_value=2, value=1)
 
     s = st.slider("Seasonal Period (s)", 5, 50, 30, 1)
     
 else:  # Grid Search
     st.subheader("Search Ranges")
-    col1, col2, col3 = st.columns(3)
+    col1, col3 = st.columns(2)
     with col1:
-        p_range = st.slider("AR order range (p)", 1, 3, (0, 2))
-    with col2:
-        d_range = st.slider("Integration order range (d)", 1, 2, (0, 1))
+        p_range = st.slider("AR order range (p)", 1, 5, (0, 2))
     with col3:
-        q_range = st.slider("MA order range (q)", 1, 3, (0, 2))
+        q_range = st.slider("MA order range (q)", 1, 5, (0, 2))
 
-    col1, col2, col3 = st.columns(3)
+    d_range = (0, 2)  # Fixed to 0 or 1 for simplicity
+
+    col1, col3 = st.columns(2)
     with col1:
         P_range = st.slider("Seasonal AR range (P)", 1, 2, (0, 1))
-    with col2:
-        D_range = st.slider("Seasonal Integration range (D)", 1, 2, (0, 1))
     with col3:
         Q_range = st.slider("Seasonal MA range (Q)", 1, 2, (0, 1))
 
-    s = st.slider("Seasonal Period (s)", 5, 50, 30, 1)
+    D_range = (0, 1)  # Fixed to 0 or 1 for simplicity
+
+    s = st.selectbox("Seasonal Period (s)", 
+                     [5, 7, 10, 12, 14, 30, 50], 
+                     index=3, 
+                     help="Seasonal period (s) is the number of observations in one seasonal cycle. Common values are 5, 7, 10, 12, 14, 30, or 50.")
 
 # Advanced options
 with st.expander("Advanced Options"):

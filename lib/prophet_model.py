@@ -46,7 +46,7 @@ st.write("Date Range:", date_range_str)
 st.write("---")
 
 # Initialize scaler
-scaler = MinMaxScaler(feature_range=(0, 1))
+scaler = MinMaxScaler()
 
 # Scale the Close prices
 scaled_close = scaler.fit_transform(df['Close'].values.reshape(-1, 1)).flatten()

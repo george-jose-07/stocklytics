@@ -60,7 +60,7 @@ if has_datetime_index:
     full_dates = df.index
 else:
     train_dates = list(range(len(train)))
-    test_dates = list(range(len(test), len(df)))
+    test_dates = list(range(len(train), len(df)))
     full_dates = list(range(len(df)))
 
 col1, col2 = st.columns(2)
@@ -102,12 +102,11 @@ col1, col2 = st.columns(2)
 with col1:
     lookback = st.slider("Lookback Window", 10, 60, 30, 5)
 with col2:
-    lstm_units = st.slider("LSTM Units", 25, 100, 50, 10)
+    lstm_units = st.slider("LSTM Units", 25, 100, 50, 5)
 
-batch_size = st.selectbox("Batch Size", [1, 2, 4, 8, 16, 32])
+batch_size = st.selectbox("Batch Size", [2, 4, 8, 16, 32, 64])
 
-
-epochs = st.slider("Training Epochs", 1, 50, 10, 1)
+epochs = st.slider("Training Epochs", 0, 100, 30, 5)
 
 future_days = st.slider("Days to Predict into Future", 1, 30, 14, 1)  # Add option for future prediction days
 

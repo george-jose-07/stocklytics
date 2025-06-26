@@ -81,31 +81,31 @@ with tab1:
     
     # File uploader
     file = st.file_uploader("Choose a CSV file", type=["csv", "txt"])
-    if file is not None:
+    fetch_button2 = st.button("Fetch Data", type="primary")
+    if file is not None and fetch_button2:
         try:
             df = pd.read_csv(file)
-            st.rerun()
             # Try to identify and parse date column
-            date_column = None
-            potential_date_columns = ['Date', 'date', 'DATE', 'Datetime', 'datetime', 'Time', 'time']
-            for col in potential_date_columns:
-                if col in df.columns:
-                    date_column = col
-                    break
+            # date_column = None
+            df = df.reset_index()
+            df = df[['Date'] + REQUIRED_COLUMNS]
+            # potential_date_columns = ['Date', 'date', 'DATE', 'Datetime', 'datetime', 'Time', 'time']
+            # for col in potential_date_columns:
+            #     if col in df.columns:
+            #         date_column = col
+            #         break
                 
             # If date column found, parse it and set as index
-            if date_column:
-                try:
-                    df[date_column] = pd.to_datetime(df[date_column]).dt.date
-                    df[date_column] = pd.to_datetime(df[date_column])
-                    df = df.set_index(date_column)
-                    df = df.sort_index()  # Sort by date
-                except Exception as e:
-                    st.warning(f"Could not parse date column '{date_column}': {e}")
-                    st.info("Using numeric indices for plotting.")
-            else:
-                st.warning("No date column found. Using numeric indices for plotting.")
-                st.info("For better visualization, include a 'Date' column in your CSV.")
+            
+            df['Date'] = pd.to_datetime(df['Date']).dt.date
+            df['Date'] = pd.to_datetime(df['Date'])
+            df = df.set_index('Date')
+            df = df.sort_index()  # Sort by date
+            st.session_state.df = df 
+            st.session_state.stock_name = "Stock"  # Default stock name
+            # else:
+            #     st.warning("No date column found. Using numeric indices for plotting.")
+            #     st.info("For better visualization, include a 'Date' column in your CSV.")
             
             # Filter to keep only required columns that exist in the CSV
             available_cols = [col for col in REQUIRED_COLUMNS if col in df.columns]
@@ -223,17 +223,23 @@ if 'df' in st.session_state and st.session_state.df is not None:
             st.info("Volume chart not available - 'Volume' column not found in dataset")
 
         x=df.copy()  # Use x for rolling mean calculations to avoid confusion with plot_df
-        x['rolling_mean_30'] = df['Close'].rolling(window=30).mean()
-        x['rolling_mean_7'] = df['Close'].rolling(window=7).mean()
-        x['rolling_mean_20'] = df['Close'].rolling(window=20).mean()
-        x['rolling_mean_10'] = df['Close'].rolling(window=10).mean()
+        x['rolling mean 30'] = df['Close'].rolling(window=30).mean()
+        x['rolling mean 7'] = df['Close'].rolling(window=7).mean()
+        x['rolling mean 20'] = df['Close'].rolling(window=20).mean()
+        x['rolling mean 10'] = df['Close'].rolling(window=10).mean()
         st.subheader("Rolling Mean of Closing Price")
         fig_rolling_mean = px.line(
             x.reset_index(),
             x='Date',
-            y=['rolling_mean_7', 'rolling_mean_10', 'rolling_mean_20', 'rolling_mean_30'],
+            y=['rolling mean 7', 'rolling mean 10', 'rolling mean 20', 'rolling mean 30'],
             title=f'{st.session_state.stock_name} - Rolling Mean of Closing Price',
-            labels={'Date': 'Date', 'rolling_mean_7': '7-Day Rolling Mean','rolling_mean_10': '10-Day Rolling Mean', 'rolling_mean_20': '20-Day Rolling Mean', 'rolling_mean_30': '30-Day Rolling Mean'}
+            labels= {
+                'Date': 'Date',
+                'rolling mean 7': '7-Day Rolling Mean',
+                'rolling mean 10': '10-Day Rolling Mean',
+                'rolling mean 20': '20-Day Rolling Mean',
+                'rolling mean 30': '30-Day Rolling Mean'}
+
         )
         st.plotly_chart(fig_rolling_mean, use_container_width=True)
 
