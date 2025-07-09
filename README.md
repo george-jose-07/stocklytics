@@ -136,6 +136,21 @@ The platform provides comprehensive evaluation metrics:
 
 ## 🖼️ Screenshots
 
+<img src="https://github.com/user-attachments/assets/6109e19e-419d-44ff-a2f7-6c1672f87f48" width="500"/>
+<img src="https://github.com/user-attachments/assets/44546d63-d771-4e48-b4f1-c4013007a482" width="500"/>
+<img src="https://github.com/user-attachments/assets/0182aad5-6c83-4899-ac54-023f368787c4" width="500"/>
+<img src="https://github.com/user-attachments/assets/1b9590c3-f14a-45a8-bdbc-6128ad15e2db" width="500"/>
+<img src="https://github.com/user-attachments/assets/1e2ac449-4142-475d-8ced-b2db32d4b824" width="500"/>
+<img src="https://github.com/user-attachments/assets/85ac89fd-4df0-4f43-8f22-5baacb15fb84" width="500"/>
+<img src="https://github.com/user-attachments/assets/a4b763d9-bc46-45d7-b89c-30697569b6a8" width="500"/>
+<img src="https://github.com/user-attachments/assets/f851290a-c2b4-43a1-b078-548d74a70acb" width="500"/>
+<img src="https://github.com/user-attachments/assets/5b931d86-d3e7-431a-9345-757de8d9edae" width="500"/>
+<img src="https://github.com/user-attachments/assets/1ce06c31-144b-4f01-99a7-926a31a8a5ac" width="500"/>
+<img src="https://github.com/user-attachments/assets/a0437679-2490-4d68-b25f-36b8cdf535bc" width="500"/>
+<img src="https://github.com/user-attachments/assets/ba930887-823d-4c22-9e43-481bc9eb004e" width="500"/>
+<img src="https://github.com/user-attachments/assets/69fcc450-12cd-4967-a0e7-d754903edcbf" width="500"/>
+<img src="https://github.com/user-attachments/assets/13e0255d-9ee3-4f03-ad18-cc68be295ca6" width="500"/>
+
 ## 🙏 Acknowledgments
 
 - **Streamlit** for the amazing web app framework
