@@ -2,6 +2,11 @@
 
 **Stocklytics** is a comprehensive stock price forecasting and prediction platform built with Python and Streamlit. It leverages multiple machine learning and deep learning models to provide accurate stock price predictions with interactive visualizations.
 
+**Link:** 
+```bash
+https://stocklytics.streamlit.app/
+```
+
 ## 🚀 Features
 
 ### 📊 Multiple Model Support
@@ -16,7 +21,7 @@
 - **Date Range Selection**: Flexible date range for historical data
 
 ### 🎛️ Customizable Parameters
-- **Neural Network Models**: Epochs, Lookback Window, Units, Batch Size, Future Prediction Days
+- **Neural Network Models**: Epochs, Lookback Window, Units, Batch Size, Future Prediction Days and Test-Train Split 
 - **ARIMA/SARIMA**: Manual parameter setting or automatic optimization with RMSE-based selection
 - **Prophet**: Tuning modes (Quick/Comprehensive), Frequency settings (Business/Daily), Uncertainty samples
 
@@ -32,15 +37,17 @@
 - pip package manager
 
 ### Quick Setup
+Clone the repository
 ```bash
-# Clone the repository
 git clone https://github.com/george-jose-07/stocklytics.git
 cd stocklytics
-
-# Install required packages
+```
+Install required packages
+```bash
 pip install -r requirements.txt
-
-# Run the application
+```
+Run the application
+```bash
 streamlit run streamlit_app.py
 ```
 
