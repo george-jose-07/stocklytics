@@ -168,7 +168,7 @@ if st.button("🚀 Train ARIMA Model", type="primary"):
                     current_combination += 1
                     progress = current_combination / total_combinations
                     progress_bar.progress(progress)
-                    status_text.text(f"Testing SARIMA({p_val},{d_val},{q_val}) - {current_combination}/{total_combinations}")
+                    status_text.text(f"Testing ARIMA({p_val},{d_val},{q_val}) - {current_combination}/{total_combinations}")
                     try:
                         model = ARIMA(train_data, order=(p_val, d_val, q_val))
                         fitted_model = model.fit()
